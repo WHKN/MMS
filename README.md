@@ -1,2 +1,2 @@
 # MMS
-Simple membership management system
+This is a simple membership management system built by AI.

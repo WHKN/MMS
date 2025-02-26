@@ -1,7 +1,7 @@
 <template>
   <el-container class="app-container">
     <el-header>
-      <h1>城市书房会员储值消费系统</h1>
+      <h1>会员储值消费系统</h1>
     </el-header>
     <el-main>
       <el-row :gutter="20">
