@@ -31,7 +31,7 @@
   - Vite
 
 - 后端
-  - Node.js
+  - Node.js + Express
   - SQLite 数据库
 
 ## 安装步骤
@@ -42,20 +42,23 @@ git clone [项目地址]
 cd MMS
 ```
 
-2. 安装依赖
+2. 运行安装程序
 ```bash
-npm install
+install.bat
 ```
+安装程序会自动检查：
+- Node.js环境
+- 必要文件完整性
+- 数据库文件
+- 项目依赖
 
-3. 启动开发服务器
-```bash
-npm run dev
-```
+## 启动系统
 
-4. 启动后端服务
-```bash
-node server.js
-```
+双击运行 `start.vbs` 即可启动系统，该脚本会自动：
+1. 启动后端服务器(server.js)
+2. 启动前端开发服务器(vite)
+
+启动完成后，在浏览器中访问：http://localhost:5173
 
 ## 使用说明
 
@@ -77,8 +80,10 @@ node server.js
 
 - 请确保Node.js环境已正确安装
 - 后端服务默认运行在3000端口
+- 前端开发服务器运行在5173端口
 - 删除会员操作不可恢复，请谨慎操作
 - 建议定期备份数据库文件(vip.db)
+- 如需停止服务，请在任务管理器中结束相关Node.js进程
 
 ## 开发者
 
