@@ -1,5 +1,6 @@
 <template>
-  <el-container class="app-container">
+  <router-view v-if="$route.path === '/login'"></router-view>
+  <el-container v-else class="app-container">
     <el-header>
       <h1>会员储值消费系统</h1>
     </el-header>

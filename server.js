@@ -2,10 +2,109 @@ import express from 'express';
 import cors from 'cors';
 import bodyParser from 'body-parser';
 import sqlite3 from 'sqlite3';
+import jwt from 'jsonwebtoken';
+import bcrypt from 'bcrypt';
 const { verbose } = sqlite3;
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
+
+// JWT密钥
+const JWT_SECRET = 'your-secret-key';
+
+// 验证JWT中间件
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({ error: '未提供认证令牌' });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) {
+      return res.status(403).json({ error: '无效的认证令牌' });
+    }
+    req.user = user;
+    next();
+  });
+};
+
+// 管理员API
+app.post('/api/admin/login', async (req, res) => {
+  const { username, password } = req.body;
+  res.set('Content-Type', 'application/json');
+
+  db.get('SELECT * FROM admins WHERE username = ?', [username], async (err, admin) => {
+    if (err) {
+      res.status(500).json({ error: '服务器错误' });
+      return;
+    }
+
+    if (!admin) {
+      res.status(401).json({ error: '用户名或密码错误' });
+      return;
+    }
+
+    const validPassword = await bcrypt.compare(password, admin.password);
+    if (!validPassword) {
+      res.status(401).json({ error: '用户名或密码错误' });
+      return;
+    }
+
+    const token = jwt.sign({ id: admin.id, username: admin.username }, JWT_SECRET, { expiresIn: '24h' });
+    res.json({ token });
+  });
+});
+
+app.get('/api/admin/check-init', (req, res) => {
+  res.set('Content-Type', 'application/json');
+  db.get('SELECT COUNT(*) as count FROM admins', [], (err, row) => {
+    if (err) {
+      res.status(500).json({ error: '服务器错误' });
+      return;
+    }
+    res.json({ needInit: row.count === 0 });
+  });
+});
+
+app.post('/api/admin/init', async (req, res) => {
+  const { username, password } = req.body;
+  res.set('Content-Type', 'application/json');
+
+  // 检查是否已存在管理员账户
+  db.get('SELECT COUNT(*) as count FROM admins', [], async (err, row) => {
+    if (err) {
+      res.status(500).json({ error: '服务器错误' });
+      return;
+    }
+
+    if (row.count > 0) {
+      res.status(400).json({ error: '管理员账户已存在' });
+      return;
+    }
+
+    // 加密密码
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // 创建管理员账户
+    db.run('INSERT INTO admins (username, password) VALUES (?, ?)', 
+      [username, hashedPassword], 
+      (err) => {
+        if (err) {
+          res.status(500).json({ error: '创建管理员账户失败' });
+          return;
+        }
+        res.json({ message: '管理员账户创建成功' });
+      }
+    );
+  });
+});
+
+// 为所有需要认证的API添加中间件
+app.use('/api/members', authenticateToken);
+app.use('/api/transactions', authenticateToken);
+app.use('/api/reports', authenticateToken);
 
 // 创建数据库连接
 const db = new sqlite3.Database('vip.db', (err) => {
@@ -14,6 +113,13 @@ const db = new sqlite3.Database('vip.db', (err) => {
   } else {
     console.log('成功连接到数据库');
     // 创建表
+    db.run(`CREATE TABLE IF NOT EXISTS admins (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT UNIQUE NOT NULL,
+      password TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`);
+
     db.run(`CREATE TABLE IF NOT EXISTS members (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,

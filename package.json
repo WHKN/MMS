@@ -10,12 +10,15 @@
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.1",
+    "bcrypt": "^5.1.1",
     "body-parser": "^1.20.3",
     "cors": "^2.8.5",
     "element-plus": "^2.9.5",
     "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
     "sqlite3": "^5.1.7",
-    "vue": "^3.5.13"
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.1",
