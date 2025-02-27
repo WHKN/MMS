@@ -322,11 +322,11 @@ onMounted(async () => {
         </div>
       </el-header>
 
-      <el-main>
-        <el-row :gutter="20">
+      <el-main style="height: calc(100vh - 60px); padding: 20px; overflow: hidden;">
+        <el-row :gutter="20" style="height: 100%;">
           <!-- 月度统计卡片 -->
-          <el-col :span="24" :lg="8">
-            <el-card>
+          <el-col :span="24" :lg="8" style="height: 100%;">
+            <el-card class="full-height-card">
               <template #header>
                 <div class="card-header">
                   <span>月度统计</span>
@@ -340,10 +340,12 @@ onMounted(async () => {
                   />
                 </div>
               </template>
-              <div v-if="monthlyStats">
-                <p>总充值金额：<span class="amount-plus">¥{{ monthlyStats.totalRecharge || 0 }}</span></p>
-                <p>总消费金额：<span class="amount-minus">¥{{ monthlyStats.totalConsume || 0 }}</span></p>
-                <p>会员总数：{{ monthlyStats.totalMembers || 0 }}</p>
+              <div class="scrollable-content">
+                <div v-if="monthlyStats">
+                  <p>总充值金额：<span class="amount-plus">¥{{ monthlyStats.totalRecharge || 0 }}</span></p>
+                  <p>总消费金额：<span class="amount-minus">¥{{ monthlyStats.totalConsume || 0 }}</span></p>
+                  <p>会员总数：{{ monthlyStats.totalMembers || 0 }}</p>
+                </div>
                 <h4>最近交易记录</h4>
                 <div v-for="transaction in recentTransactions" :key="transaction.id" class="transaction-item">
                   <div>
@@ -362,48 +364,48 @@ onMounted(async () => {
               </div>
             </el-card>
           </el-col>
-
           <!-- 会员列表卡片 -->
-          <el-col :span="24" :lg="16">
-            <el-card>
+          <el-col :span="24" :lg="16" style="height: 100%;">
+            <el-card class="full-height-card">
               <template #header>
                 <div class="card-header">
                   <span>会员管理</span>
                   <el-button type="primary" @click="showAddMemberDialog = true">添加会员</el-button>
                 </div>
               </template>
+              <div class="scrollable-content">
+                <div class="search-bar">
+                  <el-input
+                    v-model="searchQuery"
+                    placeholder="搜索会员姓名或手机号"
+                    class="search-input"
+                    :prefix-icon="Search"
+                    clearable
+                    @input="handleSearch"
+                  />
+                </div>
 
-              <div class="search-bar">
-                <el-input
-                  v-model="searchQuery"
-                  placeholder="搜索会员姓名或手机号"
-                  class="search-input"
-                  :prefix-icon="Search"
-                  clearable
-                  @input="handleSearch"
-                />
+                <el-table :data="filteredMembers" style="width: 100%">
+                  <el-table-column prop="name" label="姓名" width="300" />
+                  <el-table-column prop="phone" label="手机号" width="300" />
+                  <el-table-column prop="balance" label="余额" width="300">
+                    <template #default="{ row }">
+                      <span :class="row.balance > 0 ? 'amount-plus' : 'amount-minus'">¥{{ row.balance }}</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="操作" min-width="380">
+                    <template #default="{ row }">
+                      <el-button-group>
+                        <el-button type="primary" @click="openRechargeDialog(row)">充值</el-button>
+                        <el-button type="warning" @click="openConsumeDialog(row)">消费</el-button>
+                        <el-button type="info" @click="showMemberDetails(row)">明细</el-button>
+                        <el-button type="success" @click="openEditDialog(row)">编辑</el-button>
+                        <el-button type="danger" @click="handleDeleteMember(row)">删除</el-button>
+                      </el-button-group>
+                    </template>
+                  </el-table-column>
+                </el-table>
               </div>
-
-              <el-table :data="filteredMembers" style="width: 100%">
-                <el-table-column prop="name" label="姓名" width="300" />
-                <el-table-column prop="phone" label="手机号" width="300" />
-                <el-table-column prop="balance" label="余额" width="300">
-                  <template #default="{ row }">
-                    <span :class="row.balance > 0 ? 'amount-plus' : 'amount-minus'">¥{{ row.balance }}</span>
-                  </template>
-                </el-table-column>
-                <el-table-column label="操作" min-width="380">
-                  <template #default="{ row }">
-                    <el-button-group>
-                      <el-button type="primary" @click="openRechargeDialog(row)">充值</el-button>
-                      <el-button type="warning" @click="openConsumeDialog(row)">消费</el-button>
-                      <el-button type="info" @click="showMemberDetails(row)">明细</el-button>
-                      <el-button type="success" @click="openEditDialog(row)">编辑</el-button>
-                      <el-button type="danger" @click="handleDeleteMember(row)">删除</el-button>
-                    </el-button-group>
-                  </template>
-                </el-table-column>
-              </el-table>
             </el-card>
           </el-col>
         </el-row>
@@ -647,50 +649,23 @@ onMounted(async () => {
   margin-top: 20px;
   justify-content: center;
 }
-
-.transaction-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  padding: 12px;
-  border-bottom: 1px solid #f0f0f0;
-  transition: background-color 0.3s ease;
-}
-
-.transaction-item:hover {
-  background-color: #f8f8f8;
-}
-
-.transaction-header {
+.full-height-card {
+  height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 4px;
 }
 
-.member-name {
-  font-weight: 600;
-  color: #1890ff;
+:deep(.el-card__body) {
+  flex: 1;
+  padding: 0;
+  overflow: hidden;
 }
 
-.amount-plus {
-  color: #52c41a;
-  background-color: #f6ffed;
-  padding: 4px 12px;
-  border-radius: 6px;
-  font-weight: 600;
-  transition: all 0.3s ease;
-}
-
-.amount-minus {
-  color: #f5222d;
-  background-color: #fff1f0;
-  padding: 4px 12px;
-  border-radius: 6px;
-  font-weight: 600;
-  transition: all 0.3s ease;
-}
-.search-input {
-  width: 300px;
+.scrollable-content {
+  height: 100%;
+  padding: 20px;
+  overflow-y: auto;
+  box-sizing: border-box;
 }
 .transaction-item {
   display: flex;
