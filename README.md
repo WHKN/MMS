@@ -31,8 +31,8 @@
 ## 技术栈
 
 - 前端
-  - Vue 3 - 渐进式JavaScript框架
-  - Element Plus - 现代化的UI组件库
+  - Vue - 渐进式JavaScript框架
+  - Element - 现代化的UI组件库
   - Vite - 下一代前端构建工具
 
 - 后端
@@ -45,7 +45,7 @@
 
 1. 克隆项目
 ```bash
-git clone [项目地址]
+git clone https://github.com/whkn/mms.git
 cd MMS
 ```
 
@@ -67,6 +67,7 @@ install.bat
 2. 启动前端开发服务器(vite)
 
 启动完成后，在浏览器中访问：http://localhost:5173
+（推荐将start.vbs添加至您的开机启动项中，启动系统同时自动服务）
 
 ## 使用说明
 
