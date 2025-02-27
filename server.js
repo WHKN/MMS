@@ -396,7 +396,8 @@ app.get('/api/reports/monthly/:year/:month', (req, res) => {
         SUM(CASE WHEN type = 'consume' THEN amount ELSE 0 END) as totalConsume,
         SUM(CASE WHEN type = 'recharge' THEN 1 ELSE 0 END) as rechargeCount,
         SUM(CASE WHEN type = 'consume' THEN 1 ELSE 0 END) as consumeCount,
-        COUNT(DISTINCT member_id) as activeMembers
+        COUNT(DISTINCT member_id) as activeMembers,
+        (SELECT COUNT(*) FROM members) as totalMembers
       FROM transactions
       WHERE date(created_at) BETWEEN date(?) AND date(?)
     `;

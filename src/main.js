@@ -12,34 +12,49 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     {
-      path: '/',
-      redirect: '/home'
-    },
-    {
       path: '/login',
       name: 'login',
       component: Login
     },
     {
-      path: '/home',
+      path: '/',
       name: 'home',
-      component: App,
+      component: () => import('./views/Home.vue'),
       meta: { requiresAuth: true }
     }
   ]
 })
 
 // 路由守卫
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
+  // 检查是否需要初始化管理员账户
+  try {
+    const response = await fetch('http://localhost:3000/api/admin/check-init')
+    const data = await response.json()
+    if (data.needInit) {
+      if (to.path !== '/login') {
+        return next('/login')
+      }
+      return next()
+    }
+  } catch (error) {
+    console.error('检查初始化状态失败:', error)
+    return next('/login')
+  }
+
+  // 检查登录状态
   const token = localStorage.getItem('token')
   if (to.matched.some(record => record.meta.requiresAuth)) {
     if (!token) {
-      next('/login')
+      return next('/login')
+    }
+    next()
+  } else {
+    if (token && to.path === '/login') {
+      next('/')
     } else {
       next()
     }
-  } else {
-    next()
   }
 })
 
@@ -50,8 +65,9 @@ for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
   app.component(key, component)
 }
 
-app.use(ElementPlus, {
-  locale: zhCn
-})
 app.use(router)
+app.use(ElementPlus, {
+  locale: zhCn,
+})
+
 app.mount('#app')

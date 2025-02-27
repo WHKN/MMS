@@ -132,7 +132,10 @@ const checkInitStatus = async () => {
   try {
     const response = await fetch('http://localhost:3000/api/admin/check-init')
     const data = await response.json()
-    showInitDialog.value = data.needInit
+    if (data.needInit) {
+      showInitDialog.value = true
+      ElMessage.warning('系统需要初始化管理员账户')
+    }
   } catch (error) {
     ElMessage.error('系统初始化检查失败')
   }
