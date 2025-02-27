@@ -553,14 +553,17 @@ onMounted(async () => {
 
 <style scoped>
 .home-container {
-  height: 100vh;
-  background-color: #f5f7fa;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #f0f7ff 0%, #e6fffb 100%);
+  transition: background 0.3s ease;
 }
 
 .header {
   background-color: #fff;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
   margin-bottom: 20px;
+  border-radius: 0 0 12px 12px;
+  transition: box-shadow 0.3s ease;
 }
 
 .header-content {
@@ -568,11 +571,34 @@ onMounted(async () => {
   justify-content: space-between;
   align-items: center;
   height: 100%;
+  padding: 0 20px;
 }
 
 .header-content h2 {
   margin: 0;
   line-height: 60px;
+  color: #1890ff;
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+:deep(.el-card) {
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  border: none;
+  overflow: hidden;
+}
+
+:deep(.el-card:hover) {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+:deep(.el-card__header) {
+  border-bottom: 1px solid #f0f0f0;
+  padding: 16px 20px;
+  background: #fafafa;
 }
 
 .card-header {
@@ -585,16 +611,54 @@ onMounted(async () => {
   margin-bottom: 20px;
 }
 
-.search-input {
-  width: 300px;
+:deep(.el-input__wrapper) {
+  border-radius: 8px;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+:deep(.el-input__wrapper:hover) {
+  box-shadow: 0 0 0 1px #1890ff;
+}
+
+:deep(.el-button) {
+  border-radius: 8px;
+  transition: all 0.3s ease;
+}
+
+:deep(.el-button:not(.is-text):hover) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(24, 144, 255, 0.3);
+}
+
+:deep(.el-table) {
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+:deep(.el-table th) {
+  background-color: #fafafa;
+  font-weight: 600;
+  color: #1890ff;
+}
+
+:deep(.el-pagination) {
+  margin-top: 20px;
+  justify-content: center;
 }
 
 .transaction-item {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  padding: 10px 0;
-  border-bottom: 1px solid #eee;
+  padding: 12px;
+  border-bottom: 1px solid #f0f0f0;
+  transition: background-color 0.3s ease;
+}
+
+.transaction-item:hover {
+  background-color: #f8f8f8;
 }
 
 .transaction-header {
@@ -604,28 +668,61 @@ onMounted(async () => {
 }
 
 .member-name {
+  font-weight: 600;
+  color: #1890ff;
+}
+
+.amount-plus {
+  color: #52c41a;
+  background-color: #f6ffed;
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.amount-minus {
+  color: #f5222d;
+  background-color: #fff1f0;
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+.search-input {
+  width: 300px;
+}
+.transaction-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 10px 0;
+  border-bottom: 1px solid #eee;
+}
+.transaction-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.member-name {
   font-weight: bold;
   color: #333;
 }
-
 .transaction-desc {
   color: #666;
   font-size: 14px;
   margin: 4px 0;
 }
-
 .transaction-amount {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 4px;
 }
-
 .transaction-time {
   color: #999;
   font-size: 12px;
 }
-
 .amount-plus {
   color: #67c23a;
   background-color: #f0f9eb;
@@ -634,7 +731,6 @@ onMounted(async () => {
   font-size: 15px;
   font-weight: bold;
 }
-
 .amount-minus {
   color: #f56c6c;
   background-color: #fef0f0;
