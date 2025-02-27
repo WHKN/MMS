@@ -36,50 +36,52 @@
           </el-button>
         </el-form-item>
       </el-form>
-
-      <!-- 首次使用提示 -->
-      <el-dialog
-        v-model="showInitDialog"
-        title="系统初始化"
-        :close-on-click-modal="false"
-        :close-on-press-escape="false"
-        :show-close="false"
-      >
-        <el-form
-          ref="initForm"
-          :model="initData"
-          :rules="initRules"
-          label-position="top"
-        >
-          <el-form-item label="设置管理员用户名" prop="username">
-            <el-input v-model="initData.username" placeholder="请输入管理员用户名" />
-          </el-form-item>
-          
-          <el-form-item label="设置管理员密码" prop="password">
-            <el-input
-              v-model="initData.password"
-              type="password"
-              placeholder="请输入密码"
-              show-password
-            />
-          </el-form-item>
-          
-          <el-form-item label="确认密码" prop="confirmPassword">
-            <el-input
-              v-model="initData.confirmPassword"
-              type="password"
-              placeholder="请再次输入密码"
-              show-password
-            />
-          </el-form-item>
-        </el-form>
-        <template #footer>
-          <el-button type="primary" @click="handleInitSubmit" :loading="initLoading">
-            创建管理员账户
-          </el-button>
-        </template>
-      </el-dialog>
     </el-card>
+    
+    <!-- 首次使用提示 -->
+    <el-dialog
+      v-model="showInitDialog"
+      title="系统初始化"
+      :close-on-click-modal="false"
+      :close-on-press-escape="false"
+      :show-close="false"
+      width="30%"
+      class="init-dialog"
+    >
+      <el-form
+        ref="initForm"
+        :model="initData"
+        :rules="initRules"
+        label-position="top"
+      >
+        <el-form-item label="设置管理员用户名" prop="username">
+          <el-input v-model="initData.username" placeholder="请输入管理员用户名" />
+        </el-form-item>
+        
+        <el-form-item label="设置管理员密码" prop="password">
+          <el-input
+            v-model="initData.password"
+            type="password"
+            placeholder="请输入密码"
+            show-password
+          />
+        </el-form-item>
+        
+        <el-form-item label="确认密码" prop="confirmPassword">
+          <el-input
+            v-model="initData.confirmPassword"
+            type="password"
+            placeholder="请再次输入密码"
+            show-password
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button type="primary" @click="handleInitSubmit" :loading="initLoading">
+          创建管理员账户
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -204,21 +206,91 @@ onMounted(() => {
   justify-content: center;
   align-items: center;
   min-height: 100vh;
-  background-color: #f5f7fa;
+  background: linear-gradient(135deg, #1890ff 0%, #36cfc9 100%);
+  transition: background 0.3s ease;
 }
 
 .login-card {
   width: 400px;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.95);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.login-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.15);
 }
 
 .login-title {
   text-align: center;
   margin: 0;
-  color: #303133;
+  color: #1890ff;
+  font-size: 24px;
+  font-weight: 600;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .login-button {
   width: 100%;
   margin-top: 20px;
+  height: 40px;
+  font-size: 16px;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+}
+
+.login-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(24, 144, 255, 0.3);
+}
+
+:deep(.el-input__wrapper) {
+  border-radius: 8px;
+  transition: all 0.3s ease;
+}
+
+:deep(.el-input__wrapper:hover) {
+  box-shadow: 0 0 0 1px #1890ff;
+}
+
+:deep(.el-form-item__label) {
+  font-weight: 500;
+  color: #1890ff;
+}
+
+.el-dialog {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+:deep(.el-dialog__header) {
+  background: #1890ff;
+  margin: 0;
+  padding: 20px;
+}
+
+:deep(.el-dialog__title) {
+  color: white;
+  font-weight: 600;
+}
+
+:deep(.el-dialog__body) {
+  padding: 30px 20px;
+}
+
+:deep(.el-dialog__footer) {
+  padding: 10px 20px 20px;
+  text-align: center;
+}
+.init-dialog {
+  margin: 0;
+}
+
+:deep(.el-dialog) {
+  margin: 15vh auto !important;
+  max-width: 500px;
 }
 </style>
