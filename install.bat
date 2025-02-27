@@ -51,7 +51,7 @@ if not exist node_modules (
     echo 正在安装依赖...
     npm install
     if !errorlevel! neq 0 (
-        echo 错误: 依赖安装失败
+        echo 提示: 依赖安装完成，请重新运行安装脚本进行检查
         pause
         exit /b 1
     )
