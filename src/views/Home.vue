@@ -26,7 +26,8 @@ const showMemberDetailsDialog = ref(false)
 const addMemberForm = ref({
   name: '',
   phone: '',
-  initialBalance: 0
+  initialBalance: 0,
+  bonusAmount: 0
 })
 
 const editMemberForm = ref({
@@ -342,9 +343,11 @@ onMounted(async () => {
               </template>
               <div class="scrollable-content">
                 <div v-if="monthlyStats">
-                  <p>总充值金额：<span class="amount-plus">¥{{ monthlyStats.totalRecharge || 0 }}</span></p>
-                  <p>总消费金额：<span class="amount-minus">¥{{ monthlyStats.totalConsume || 0 }}</span></p>
+                  <p>当月实收充值金额：<span class="amount-plus">¥{{ monthlyStats.totalRecharge || 0 }}</span></p>
+                  <p>总会员可用余额(含赠费)：<span class="amount-plus">¥{{ monthlyStats.totalRechargeWithBonus || 0 }}</span></p>
+                  <p>当月总消费金额：<span class="amount-minus">¥{{ monthlyStats.totalConsume || 0 }}</span></p>
                   <p>会员总数：{{ monthlyStats.totalMembers || 0 }}</p>
+                  <p>有效会员数：{{ monthlyStats.validMembers || 0 }}</p>
                 </div>
                 <h4>最近交易记录</h4>
                 <div v-for="transaction in recentTransactions" :key="transaction.id" class="transaction-item">
@@ -355,8 +358,8 @@ onMounted(async () => {
                     </div>
                   </div>
                   <div class="transaction-amount">
-                    <span :class="transaction.type === 'recharge' ? 'amount-plus' : 'amount-minus'">
-                      {{ transaction.type === 'recharge' ? '+' : '-' }}¥{{ transaction.amount }}
+                    <span :class="transaction.type === 'consume' ? 'amount-minus' : 'amount-plus'">
+                      {{ transaction.type === 'consume' ? '-' : '+' }}¥{{ transaction.amount }}
                     </span>
                     <span class="transaction-time">{{ new Date(transaction.created_at).toLocaleString() }}</span>
                   </div>
@@ -388,9 +391,9 @@ onMounted(async () => {
                 <el-table :data="filteredMembers" style="width: 100%">
                   <el-table-column prop="name" label="姓名" width="300" />
                   <el-table-column prop="phone" label="手机号" width="300" />
-                  <el-table-column prop="balance" label="余额" width="300">
+                  <el-table-column label="余额" width="300">
                     <template #default="{ row }">
-                      <span :class="row.balance > 0 ? 'amount-plus' : 'amount-minus'">¥{{ row.balance }}</span>
+                      <span :class="row.totalBalance > 0 ? 'amount-plus' : 'amount-minus'">¥{{ row.totalBalance }}</span>
                     </template>
                   </el-table-column>
                   <el-table-column label="操作" min-width="380">
@@ -430,8 +433,11 @@ onMounted(async () => {
         <el-form-item label="手机号" prop="phone">
           <el-input v-model="addMemberForm.phone" />
         </el-form-item>
-        <el-form-item label="初始余额" prop="initialBalance">
+        <el-form-item label="充值金额" prop="initialBalance">
           <el-input-number v-model="addMemberForm.initialBalance" :min="0" />
+        </el-form-item>
+        <el-form-item label="赠费金额" prop="bonusAmount">
+          <el-input-number v-model="addMemberForm.bonusAmount" :min="0" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -503,10 +509,10 @@ onMounted(async () => {
         label-width="100px"
       >
         <div class="member-balance-info">
-          <p>当前余额：<span :class="currentMember?.balance > 0 ? 'amount-plus' : 'amount-minus'">¥{{ currentMember?.balance }}</span></p>
+          <p>当前余额：<span :class="currentMember?.totalBalance > 0 ? 'amount-plus' : 'amount-minus'">¥{{ currentMember?.totalBalance }}</span></p>
         </div>
         <el-form-item label="消费金额" prop="amount">
-          <el-input-number v-model="consumeForm.amount" :min="0" :max="currentMember?.balance || 0" />
+          <el-input-number v-model="consumeForm.amount" :min="0" />
         </el-form-item>
         <el-form-item label="备注" prop="description">
           <el-input v-model="consumeForm.description" type="textarea" />
@@ -534,15 +540,15 @@ onMounted(async () => {
           </el-table-column>
           <el-table-column prop="type" label="类型" width="100">
             <template #default="{ row }">
-              <el-tag :type="row.type === 'recharge' ? 'success' : 'danger'">
-                {{ row.type === 'recharge' ? '充值' : '消费' }}
+              <el-tag :type="row.type === 'consume' ? 'danger' : 'success'">
+                {{ row.type === 'recharge' ? '充值' : (row.type === 'bonus' ? '赠费' : '消费') }}
               </el-tag>
             </template>
           </el-table-column>
           <el-table-column prop="amount" label="金额">
             <template #default="{ row }">
-              <span :class="row.type === 'recharge' ? 'amount-plus' : 'amount-minus'">
-                {{ row.type === 'recharge' ? '+' : '-' }}¥{{ row.amount }}
+              <span :class="row.type === 'consume' ? 'amount-minus' : 'amount-plus'">
+                {{ row.type === 'consume' ? '-' : '+' }}¥{{ row.amount }}
               </span>
             </template>
           </el-table-column>

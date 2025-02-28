@@ -125,6 +125,7 @@ const db = new sqlite3.Database('vip.db', (err) => {
       name TEXT NOT NULL,
       phone TEXT UNIQUE NOT NULL,
       balance REAL DEFAULT 0,
+      bonus_balance REAL DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
 
@@ -142,7 +143,7 @@ const db = new sqlite3.Database('vip.db', (err) => {
 
 // 会员管理API
 app.post('/api/members', (req, res) => {
-  const { name, phone, initialBalance } = req.body;
+  const { name, phone, initialBalance, bonusAmount } = req.body;
   res.set('Content-Type', 'application/json');
 
   // 验证手机号格式
@@ -151,55 +152,76 @@ app.post('/api/members', (req, res) => {
     return;
   }
 
-  // 验证初始储值金额
+  // 验证初始储值金额和赠费金额
   const balance = parseFloat(initialBalance || 0);
-  if (isNaN(balance) || balance < 0) {
-    res.status(400).json({ error: '初始储值金额无效' });
+  const bonusBalance = parseFloat(bonusAmount || 0);
+  if (isNaN(balance) || balance < 0 || isNaN(bonusBalance) || bonusBalance < 0) {
+    res.status(400).json({ error: '金额无效' });
     return;
   }
 
   db.serialize(() => {
     db.run('BEGIN TRANSACTION');
 
-    db.run('INSERT INTO members (name, phone, balance) VALUES (?, ?, ?)', [name, phone, balance], function(err) {
-      if (err) {
-        db.run('ROLLBACK');
-        if (err.message.includes('UNIQUE constraint failed: members.phone')) {
-          res.status(400).json({ error: '当前会员手机号已存在' });
+    db.run('INSERT INTO members (name, phone, balance, bonus_balance) VALUES (?, ?, ?, ?)', 
+      [name, phone, balance, bonusBalance], 
+      function(err) {
+        if (err) {
+          db.run('ROLLBACK');
+          if (err.message.includes('UNIQUE constraint failed: members.phone')) {
+            res.status(400).json({ error: '当前会员手机号已存在' });
+            return;
+          }
+          res.status(400).json({ error: err.message });
           return;
         }
-        res.status(400).json({ error: err.message });
-        return;
-      }
 
-      const memberId = this.lastID;
+        const memberId = this.lastID;
 
-      // 如果有初始储值，添加交易记录
-      if (balance > 0) {
-        db.run(
-          'INSERT INTO transactions (member_id, type, amount, description) VALUES (?, ?, ?, ?)',
-          [memberId, 'recharge', balance, '开卡初始储值'],
-          (err) => {
-            if (err) {
+        // 如果有初始储值或赠费，添加交易记录
+        if (balance > 0 || bonusBalance > 0) {
+          const promises = [];
+          
+          if (balance > 0) {
+            promises.push(new Promise((resolve, reject) => {
+              db.run(
+                'INSERT INTO transactions (member_id, type, amount, description) VALUES (?, ?, ?, ?)',
+                [memberId, 'recharge', balance, '开卡初始储值'],
+                (err) => err ? reject(err) : resolve()
+              );
+            }));
+          }
+          
+          if (bonusBalance > 0) {
+            promises.push(new Promise((resolve, reject) => {
+              db.run(
+                'INSERT INTO transactions (member_id, type, amount, description) VALUES (?, ?, ?, ?)',
+                [memberId, 'bonus', bonusBalance, '开卡赠费'],
+                (err) => err ? reject(err) : resolve()
+              );
+            }));
+          }
+
+          Promise.all(promises)
+            .then(() => {
+              db.run('COMMIT');
+              res.json({ id: memberId, name, phone, balance, bonus_balance: bonusBalance });
+            })
+            .catch(err => {
               db.run('ROLLBACK');
               res.status(400).json({ error: err.message });
-              return;
-            }
-            db.run('COMMIT');
-            res.json({ id: memberId, name, phone, balance });
-          }
-        );
-      } else {
-        db.run('COMMIT');
-        res.json({ id: memberId, name, phone, balance });
-      }
+            });
+        } else {
+          db.run('COMMIT');
+          res.json({ id: memberId, name, phone, balance: 0, bonus_balance: 0 });
+        }
     });
   });
 });
 
 app.get('/api/members', (req, res) => {
   res.set('Content-Type', 'application/json');
-  db.all('SELECT * FROM members', [], (err, rows) => {
+  db.all('SELECT *, (balance + bonus_balance) as totalBalance FROM members', [], (err, rows) => {
     if (err) {
       res.status(400).json({ error: err.message });
       return;
@@ -213,24 +235,9 @@ app.post('/api/transactions', (req, res) => {
   const { member_id, type, amount, description } = req.body;
   res.set('Content-Type', 'application/json');
 
-  // 如果是消费交易，先检查余额是否充足
+  // 如果是消费交易，直接进入处理流程
   if (type === 'consume') {
-    db.get('SELECT balance FROM members WHERE id = ?', [member_id], (err, member) => {
-      if (err) {
-        res.status(400).json({ error: err.message });
-        return;
-      }
-      if (!member) {
-        res.status(404).json({ error: '会员不存在' });
-        return;
-      }
-      if (member.balance < amount) {
-        res.status(400).json({ error: '余额不足' });
-        return;
-      }
-      // 余额充足，继续处理交易
-      processTransaction();
-    });
+    processTransaction();
   } else {
     // 充值交易直接处理
     processTransaction();
@@ -239,32 +246,127 @@ app.post('/api/transactions', (req, res) => {
   function processTransaction() {
     db.serialize(() => {
       db.run('BEGIN TRANSACTION');
-    
-      const updateBalance = type === 'recharge' ? 
-        'UPDATE members SET balance = balance + ? WHERE id = ?' :
-        'UPDATE members SET balance = balance - ? WHERE id = ?';
-    
-      db.run(updateBalance, [amount, member_id], function(err) {
-        if (err) {
-          db.run('ROLLBACK');
-          res.status(400).json({ error: err.message });
-          return;
-        }
-        
-        db.run(
-          'INSERT INTO transactions (member_id, type, amount, description) VALUES (?, ?, ?, ?)',
-          [member_id, type, amount, description],
+
+      // 如果是消费，先检查总余额是否足够
+      if (type === 'consume') {
+        db.get('SELECT balance, bonus_balance FROM members WHERE id = ?', [member_id], (err, row) => {
+          if (err || !row) {
+            db.run('ROLLBACK');
+            res.status(400).json({ error: err ? err.message : '会员不存在' });
+            return;
+          }
+          
+          const balance = parseFloat(row.balance) || 0;
+          const bonusBalance = parseFloat(row.bonus_balance) || 0;
+          const totalBalance = balance + bonusBalance;
+          const consumeAmount = parseFloat(amount) || 0;
+          
+          // 检查消费金额是否有效
+          if (isNaN(consumeAmount) || consumeAmount <= 0) {
+            db.run('ROLLBACK');
+            res.status(400).json({ error: '消费金额无效' });
+            return;
+          }
+
+          // 检查总余额是否足够
+          if (totalBalance < consumeAmount) {
+            db.run('ROLLBACK');
+            res.status(400).json({ error: '余额不足' });
+            return;
+          }
+
+          // 优先扣除赠费余额，但不能超过实际的赠费余额
+          const bonusToUse = Math.min(bonusBalance, consumeAmount);
+          const balanceToUse = consumeAmount - bonusToUse;
+          
+          // 检查储值余额是否足够支付剩余金额
+          if (balanceToUse > balance) {
+            db.run('ROLLBACK');
+            res.status(400).json({ error: '储值余额不足' });
+            return;
+          }
+          
+          db.run('UPDATE members SET bonus_balance = bonus_balance - ?, balance = balance - ? WHERE id = ?',
+            [bonusToUse, balanceToUse, member_id],
+            function(err) {
+              if (err) {
+                db.run('ROLLBACK');
+                res.status(400).json({ error: err.message });
+                return;
+              }
+
+              // 添加交易记录
+              db.run(
+                'INSERT INTO transactions (member_id, type, amount, description) VALUES (?, ?, ?, ?)',
+                [member_id, type, amount, description],
+                function(err) {
+                  if (err) {
+                    db.run('ROLLBACK');
+                    res.status(400).json({ error: err.message });
+                    return;
+                  }
+                  db.run('COMMIT');
+                  res.json({ id: this.lastID, member_id, type, amount, description });
+                }
+              );
+            }
+          );
+        });
+      } else if (type === 'bonus') {
+        // 赠费增加赠费余额
+        db.run('UPDATE members SET bonus_balance = bonus_balance + ? WHERE id = ?',
+          [amount, member_id],
           function(err) {
             if (err) {
               db.run('ROLLBACK');
               res.status(400).json({ error: err.message });
               return;
             }
-            db.run('COMMIT');
-            res.json({ id: this.lastID, member_id, type, amount, description });
+            
+            // 添加交易记录
+            db.run(
+              'INSERT INTO transactions (member_id, type, amount, description) VALUES (?, ?, ?, ?)',
+              [member_id, type, amount, description],
+              function(err) {
+                if (err) {
+                  db.run('ROLLBACK');
+                  res.status(400).json({ error: err.message });
+                  return;
+                }
+                db.run('COMMIT');
+                res.json({ id: this.lastID, member_id, type, amount, description });
+              }
+            );
           }
         );
-      });
+      } else {
+        // 充值增加储值余额
+        db.run('UPDATE members SET balance = balance + ? WHERE id = ?',
+          [amount, member_id],
+          function(err) {
+            if (err) {
+              db.run('ROLLBACK');
+              res.status(400).json({ error: err.message });
+              return;
+            }
+            
+            // 添加交易记录
+            db.run(
+              'INSERT INTO transactions (member_id, type, amount, description) VALUES (?, ?, ?, ?)',
+              [member_id, type, amount, description],
+              function(err) {
+                if (err) {
+                  db.run('ROLLBACK');
+                  res.status(400).json({ error: err.message });
+                  return;
+                }
+                db.run('COMMIT');
+                res.json({ id: this.lastID, member_id, type, amount, description });
+              }
+            );
+          }
+        );
+      }
     });
   }
 });
@@ -397,7 +499,9 @@ app.get('/api/reports/monthly/:year/:month', (req, res) => {
         SUM(CASE WHEN type = 'recharge' THEN 1 ELSE 0 END) as rechargeCount,
         SUM(CASE WHEN type = 'consume' THEN 1 ELSE 0 END) as consumeCount,
         COUNT(DISTINCT member_id) as activeMembers,
-        (SELECT COUNT(*) FROM members) as totalMembers
+        (SELECT COUNT(*) FROM members) as totalMembers,
+        (SELECT COUNT(*) FROM members WHERE balance + bonus_balance > 0) as validMembers,
+        (SELECT SUM(balance + bonus_balance) FROM members) as totalRechargeWithBonus
       FROM transactions
       WHERE date(created_at) BETWEEN date(?) AND date(?)
     `;
