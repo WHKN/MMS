@@ -389,14 +389,14 @@ onMounted(async () => {
                 </div>
 
                 <el-table :data="filteredMembers" style="width: 100%">
-                  <el-table-column prop="name" label="姓名" width="300" />
-                  <el-table-column prop="phone" label="手机号" width="300" />
-                  <el-table-column label="余额" width="300">
+                  <el-table-column prop="name" label="姓名" width="300%" />
+                  <el-table-column prop="phone" label="手机号" width="300%" />
+                  <el-table-column label="余额" width="300%">
                     <template #default="{ row }">
                       <span :class="row.totalBalance > 0 ? 'amount-plus' : 'amount-minus'">¥{{ row.totalBalance }}</span>
                     </template>
                   </el-table-column>
-                  <el-table-column label="操作" min-width="380">
+                  <el-table-column label="操作" min-width="300%">
                     <template #default="{ row }">
                       <el-button-group>
                         <el-button type="primary" @click="openRechargeDialog(row)">充值</el-button>
