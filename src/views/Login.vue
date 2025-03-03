@@ -88,6 +88,9 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useRouter } from 'vue-router'
+
+const router = useRouter()
 
 const loginData = ref({
   username: '',
@@ -156,7 +159,7 @@ const handleLogin = async () => {
     if (response.ok) {
       const data = await response.json()
       localStorage.setItem('token', data.token)
-      window.location.href = '/'
+      router.push('/')
     } else {
       const error = await response.json()
       ElMessage.error(error.error || '登录失败')

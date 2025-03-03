@@ -1,9 +1,9 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
-
+const addMemberFormRef = ref(null)
 const router = useRouter()
 
 // 数据状态
@@ -14,6 +14,33 @@ const monthlyStats = ref(null)
 const recentTransactions = ref([])
 const currentMember = ref(null)
 const memberTransactions = ref([])
+const memberTypes = ref([])
+const pointLevels = ref([])
+
+// 表单数据
+const consumeForm = ref({
+  amount: 0,
+  description: '',
+  memberTypeId: null,
+  discountedAmount: 0
+})
+
+const addMemberForm = ref({
+  name: '',
+  phone: '',
+  initialBalance: 0,
+  bonusAmount: 0,
+  selectedTypes: []
+})
+
+const filteredMembers = computed(() => {
+  if (!searchQuery.value) return members.value
+  const query = searchQuery.value.toLowerCase()
+  return members.value.filter(member => 
+    member.name.toLowerCase().includes(query) ||
+    member.phone.toLowerCase().includes(query)
+  )
+})
 
 // 对话框状态
 const showAddMemberDialog = ref(false)
@@ -21,63 +48,28 @@ const showEditDialog = ref(false)
 const showRechargeDialog = ref(false)
 const showConsumeDialog = ref(false)
 const showMemberDetailsDialog = ref(false)
+const showMemberTypesDialog = ref(false)
+const showPointLevelsDialog = ref(false)
 
-// 表单数据
-const addMemberForm = ref({
+// 会员类型和等级表单数据
+const memberTypeForm = ref({
   name: '',
-  phone: '',
-  initialBalance: 0,
-  bonusAmount: 0
-})
-
-const editMemberForm = ref({
-  name: '',
-  phone: ''
-})
-
-const rechargeForm = ref({
-  amount: 0,
+  type: '',
+  duration_days: null,
+  total_times: null,
+  price: 0,
   description: ''
 })
 
-const consumeForm = ref({
-  amount: 0,
-  description: ''
+const pointLevelForm = ref({
+  name: '',
+  min_points: 0,
+  discount: 1
 })
-
-// 表单验证规则
 const memberFormRules = {
-  name: [
-    { required: true, message: '请输入会员姓名', trigger: 'blur' }
-  ],
-  phone: [
-    { required: true, message: '请输入手机号', trigger: 'blur' },
-    { pattern: /^\d{11}$/, message: '请输入正确的手机号', trigger: 'blur' }
-  ]
+  name: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
+  phone: [{ required: true, message: '请输入手机号', trigger: 'blur' }]
 }
-
-const transactionFormRules = {
-  amount: [
-    { required: true, message: '请输入金额', trigger: 'blur' },
-    { type: 'number', min: 0, message: '金额必须大于0', trigger: 'blur' }
-  ]
-}
-
-// 计算属性
-const filteredMembers = computed(() => {
-  if (!searchQuery.value) return members.value
-  const query = searchQuery.value.toLowerCase()
-  return members.value.filter(member =>
-    member.name.toLowerCase().includes(query) ||
-    member.phone.includes(query)
-  )
-})
-
-// 方法
-const handleSearch = () => {
-  // 搜索功能已通过计算属性实现
-}
-
 const fetchMembers = async () => {
   try {
     const response = await fetch('http://localhost:3000/api/members', {
@@ -96,46 +88,35 @@ const fetchMembers = async () => {
     ElMessage.error('获取会员列表失败')
   }
 }
-
-const fetchMonthlyReport = async () => {
-  if (!currentMonth.value) return
-  const [year, month] = currentMonth.value.split('-')
-  try {
-    const response = await fetch(`http://localhost:3000/api/reports/monthly/${year}/${month}`, {
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        'Content-Type': 'application/json'
-      }
-    })
-    if (response.ok) {
-      const data = await response.json()
-      monthlyStats.value = data
-      recentTransactions.value = data.transactions
-    } else {
-      const error = await response.json()
-      ElMessage.error(error.error || '获取月度报表失败')
-    }
-  } catch (error) {
-    ElMessage.error('获取月度报表失败')
-  }
-}
-
 const handleAddMember = async () => {
+  if (!addMemberFormRef.value) return
   try {
+    await addMemberFormRef.value.validate()
     const response = await fetch('http://localhost:3000/api/members', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${localStorage.getItem('token')}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(addMemberForm.value)
+      body: JSON.stringify({
+        ...addMemberForm.value,
+        memberTypes: addMemberForm.value.selectedTypes.map(id => ({
+          id: id,
+          type: memberTypes.value.find(t => t.id === id)?.type
+        }))
+      })
     })
     if (response.ok) {
       ElMessage.success('添加会员成功')
       showAddMemberDialog.value = false
-      addMemberForm.value = { name: '', phone: '', initialBalance: 0 }
+      addMemberForm.value = {
+        name: '',
+        phone: '',
+        initialBalance: 0,
+        bonusAmount: 0,
+        selectedTypes: []
+      }
       await fetchMembers()
-      await fetchMonthlyReport()
     } else {
       const error = await response.json()
       ElMessage.error(error.error || '添加会员失败')
@@ -144,16 +125,6 @@ const handleAddMember = async () => {
     ElMessage.error('添加会员失败')
   }
 }
-
-const openEditDialog = (member) => {
-  currentMember.value = member
-  editMemberForm.value = {
-    name: member.name,
-    phone: member.phone
-  }
-  showEditDialog.value = true
-}
-
 const handleEditMember = async () => {
   try {
     const response = await fetch(`http://localhost:3000/api/members/${currentMember.value.id}`, {
@@ -162,7 +133,10 @@ const handleEditMember = async () => {
         'Authorization': `Bearer ${localStorage.getItem('token')}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(editMemberForm.value)
+      body: JSON.stringify({
+        ...editMemberForm.value,
+        memberTypes: editMemberForm.value.selectedTypes
+      })
     })
     if (response.ok) {
       ElMessage.success('更新会员信息成功')
@@ -176,7 +150,6 @@ const handleEditMember = async () => {
     ElMessage.error('更新会员信息失败')
   }
 }
-
 const handleDeleteMember = async (member) => {
   try {
     await ElMessageBox.confirm(
@@ -248,9 +221,19 @@ const handleRecharge = async () => {
 
 const openConsumeDialog = (member) => {
   currentMember.value = member
-  consumeForm.value = { amount: 0, description: '' }
+  consumeForm.value = { 
+    amount: 0, 
+    description: '',
+    memberTypeId: null,
+    discountedAmount: 0
+  }
   showConsumeDialog.value = true
 }
+
+// 监听消费金额变化
+watch(() => consumeForm.value.amount, (newAmount) => {
+  consumeForm.value.discountedAmount = calculateDiscountedAmount(newAmount, currentMember.value)
+})
 
 const handleConsume = async () => {
   try {
@@ -264,14 +247,23 @@ const handleConsume = async () => {
         member_id: currentMember.value.id,
         type: 'consume',
         amount: consumeForm.value.amount,
-        description: consumeForm.value.description
+        description: consumeForm.value.description,
+        member_type_id: consumeForm.value.memberTypeId
       })
     })
     if (response.ok) {
       ElMessage.success('消费成功')
       showConsumeDialog.value = false
-      await fetchMembers()
-      await fetchMonthlyReport()
+      consumeForm.value = {
+        amount: 0,
+        description: '',
+        memberTypeId: null
+      }
+      await Promise.all([
+        fetchMembers(),
+        fetchMonthlyReport(),
+        fetchRecentTransactions()
+      ])
     } else {
       const error = await response.json()
       ElMessage.error(error.error || '消费失败')
@@ -302,14 +294,244 @@ const showMemberDetails = async (member) => {
   }
 }
 
+const fetchMonthlyReport = async () => {
+  try {
+    const response = await fetch(`http://localhost:3000/api/monthly-report?month=${currentMonth.value}`, {
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'Content-Type': 'application/json'
+      }
+    })
+    if (response.ok) {
+      monthlyStats.value = await response.json()
+    } else {
+      const error = await response.json()
+      ElMessage.error(error.error || '获取月度报表失败')
+    }
+  } catch (error) {
+    ElMessage.error('获取月度报表失败')
+  }
+}
+
+const handleSearch = () => {
+  // 在这里实现搜索逻辑
+  // 可以根据searchQuery过滤members列表
+  if (!searchQuery.value) {
+    fetchMembers()
+    return
+  }
+  
+  const query = searchQuery.value.toLowerCase()
+  members.value = members.value.filter(member => 
+    member.name.toLowerCase().includes(query) ||
+    member.phone.toLowerCase().includes(query)
+  )
+}
+
 const handleLogout = () => {
   localStorage.removeItem('token')
   router.push('/login')
 }
 
+const fetchMemberTypes = async () => {
+  try {
+    const response = await fetch('http://localhost:3000/api/member-types', {
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'Content-Type': 'application/json'
+      }
+    })
+    if (response.ok) {
+      memberTypes.value = await response.json()
+    } else {
+      const error = await response.json()
+      ElMessage.error(error.error || '获取会员类型失败')
+    }
+  } catch (error) {
+    ElMessage.error('获取会员类型失败')
+  }
+}
+
+const fetchPointLevels = async () => {
+  try {
+    const response = await fetch('http://localhost:3000/api/point-levels', {
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'Content-Type': 'application/json'
+      }
+    })
+    if (response.ok) {
+      pointLevels.value = await response.json()
+    } else {
+      const error = await response.json()
+      ElMessage.error(error.error || '获取积分等级失败')
+    }
+  } catch (error) {
+    ElMessage.error('获取积分等级失败')
+  }
+}
+
+// 添加会员类型
+const handleAddMemberType = async () => {
+  try {
+    // 表单验证
+    if (!memberTypeForm.value.name || !memberTypeForm.value.type) {
+      ElMessage.error('请填写必要的会员类型信息')
+      return
+    }
+
+    // 验证特定类型的必填字段
+    if (['year', 'season', 'month'].includes(memberTypeForm.value.type) && !memberTypeForm.value.duration_days) {
+      ElMessage.error('请填写会员有效期')
+      return
+    }
+
+    if (memberTypeForm.value.type === 'times' && !memberTypeForm.value.total_times) {
+      ElMessage.error('请填写使用次数')
+      return
+    }
+
+    const response = await fetch('http://localhost:3000/api/member-types', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(memberTypeForm.value)
+    })
+
+    if (response.ok) {
+      ElMessage.success('添加会员类型成功')
+      memberTypeForm.value = {
+        name: '',
+        type: '',
+        duration_days: null,
+        total_times: null,
+        price: 0,
+        description: ''
+      }
+      await fetchMemberTypes()
+    } else {
+      const error = await response.json()
+      ElMessage.error(error.error || '添加会员类型失败')
+    }
+  } catch (error) {
+    ElMessage.error('添加会员类型失败')
+  }
+}
+
+// 删除会员类型
+const handleDeleteMemberType = async (memberType) => {
+  try {
+    await ElMessageBox.confirm(
+      '确定要删除该会员类型吗？删除后将无法恢复。',
+      '警告',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+
+    const response = await fetch(`http://localhost:3000/api/member-types/${memberType.id}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'Content-Type': 'application/json'
+      }
+    })
+
+    if (response.ok) {
+      ElMessage.success('删除会员类型成功')
+      await fetchMemberTypes()
+    } else {
+      const error = await response.json()
+      ElMessage.error(error.error || '删除会员类型失败')
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error('删除会员类型失败')
+    }
+  }
+}
+
+// 添加会员等级
+const handleAddPointLevel = async () => {
+  try {
+    // 表单验证
+    if (!pointLevelForm.value.name || pointLevelForm.value.min_points === undefined || pointLevelForm.value.min_points === null || pointLevelForm.value.discount === null) {
+      ElMessage.error('请填写完整的会员等级信息')
+      return
+    }
+
+    // 确保min_points不为空且为非负数
+    if (pointLevelForm.value.min_points < 0) {
+      ElMessage.error('最小积分不能小于0')
+      return
+    }
+    const response = await fetch('http://localhost:3000/api/point-levels', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(pointLevelForm.value)
+    })
+    if (response.ok) {
+      ElMessage.success('添加会员等级成功')
+      pointLevelForm.value = { name: '', min_points: 0, discount: 1 }
+      await fetchPointLevels()
+    } else {
+      const error = await response.json()
+      ElMessage.error(error.error || '添加会员等级失败')
+    }
+  } catch (error) {
+    ElMessage.error('添加会员等级失败')
+  }
+}
+
+// 删除会员等级
+const handleDeletePointLevel = async (pointLevel) => {
+  try {
+    await ElMessageBox.confirm(
+      '确定要删除该会员等级吗？删除后将无法恢复。',
+      '警告',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+
+    const response = await fetch(`http://localhost:3000/api/point-levels/${pointLevel.id}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'Content-Type': 'application/json'
+      }
+    })
+
+    if (response.ok) {
+      ElMessage.success('删除会员等级成功')
+      await fetchPointLevels()
+    } else {
+      const error = await response.json()
+      ElMessage.error(error.error || '删除会员等级失败')
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error('删除会员等级失败')
+    }
+  }
+}
+
 onMounted(async () => {
-  await fetchMembers()
-  await fetchMonthlyReport()
+  await Promise.all([
+    fetchMembers(),
+    fetchMonthlyReport(),
+    fetchMemberTypes(),
+    fetchPointLevels()
+  ])
 })
 </script>
 
@@ -319,7 +541,11 @@ onMounted(async () => {
       <el-header class="header">
         <div class="header-content">
           <h2>会员储值消费系统</h2>
-          <el-button type="danger" @click="handleLogout">退出登录</el-button>
+          <div class="header-buttons">
+            <el-button type="primary" @click="showMemberTypesDialog = true">会员类型管理</el-button>
+            <el-button type="primary" @click="showPointLevelsDialog = true">会员等级管理</el-button>
+            <el-button type="danger" @click="handleLogout">退出登录</el-button>
+          </div>
         </div>
       </el-header>
 
@@ -389,14 +615,29 @@ onMounted(async () => {
                 </div>
 
                 <el-table :data="filteredMembers" style="width: 100%">
-                  <el-table-column prop="name" label="姓名" width="250%" />
-                  <el-table-column prop="phone" label="手机号" width="300%" />
-                  <el-table-column label="余额" width="300%">
+                  <el-table-column prop="name" label="姓名" width="150%" />
+                  <el-table-column prop="phone" label="手机号" width="200%" />
+                  <el-table-column prop="memberTypes" label="会员类型" width="200%">
+                    <template #default="{ row }">
+                      <el-tag v-if="row.memberTypes" type="success" effect="plain">{{ row.memberTypes }}</el-tag>
+                      <el-tag v-else type="info" effect="plain">普通会员</el-tag>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="会员等级" width="200%">
+                    <template #default="{ row }">
+                      <el-tag v-if="row.levelName" type="warning" effect="plain">
+                        {{ row.levelName }} ({{ (row.levelDiscount * 10).toFixed(1) }}折)
+                      </el-tag>
+                      <el-tag v-else type="info" effect="plain">普通会员</el-tag>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="余额" width="180%">
                     <template #default="{ row }">
                       <span :class="row.totalBalance > 0 ? 'amount-plus' : 'amount-minus'">¥{{ row.totalBalance }}</span>
                     </template>
                   </el-table-column>
-                  <el-table-column label="操作" min-width="380%">
+                  
+                  <el-table-column label="操作" min-width="350%">
                     <template #default="{ row }">
                       <el-button-group>
                         <el-button type="primary" @click="openRechargeDialog(row)">充值</el-button>
@@ -439,6 +680,16 @@ onMounted(async () => {
         <el-form-item label="赠费金额" prop="bonusAmount">
           <el-input-number v-model="addMemberForm.bonusAmount" :min="0" />
         </el-form-item>
+        <el-form-item label="会员类型" prop="selectedTypes">
+          <el-select v-model="addMemberForm.selectedTypes" multiple placeholder="请选择会员类型">
+            <el-option
+              v-for="type in memberTypes"
+              :key="type.id"
+              :label="type.name"
+              :value="type.id"
+            />
+          </el-select>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="showAddMemberDialog = false">取消</el-button>
@@ -463,6 +714,16 @@ onMounted(async () => {
         </el-form-item>
         <el-form-item label="手机号" prop="phone">
           <el-input v-model="editMemberForm.phone" />
+        </el-form-item>
+        <el-form-item label="会员类型" prop="selectedTypes">
+          <el-select v-model="editMemberForm.selectedTypes" multiple placeholder="请选择会员类型">
+            <el-option
+              v-for="type in memberTypes"
+              :key="type.id"
+              :label="type.name"
+              :value="type.id"
+            />
+          </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -510,12 +771,26 @@ onMounted(async () => {
       >
         <div class="member-balance-info">
           <p>当前余额：<span :class="currentMember?.totalBalance > 0 ? 'amount-plus' : 'amount-minus'">¥{{ currentMember?.totalBalance }}</span></p>
+          <p v-if="currentMember?.levelName">会员等级：<el-tag type="warning" effect="plain">{{ currentMember.levelName }} ({{ (currentMember.levelDiscount * 10).toFixed(1) }}折)</el-tag></p>
         </div>
         <el-form-item label="消费金额" prop="amount">
           <el-input-number v-model="consumeForm.amount" :min="0" />
+          <span v-if="consumeForm.discountedAmount !== consumeForm.amount" class="discount-tip">
+            折后金额：<span class="amount-minus">¥{{ consumeForm.discountedAmount }}</span>
+          </span>
         </el-form-item>
         <el-form-item label="备注" prop="description">
           <el-input v-model="consumeForm.description" type="textarea" />
+        </el-form-item>
+        <el-form-item label="会员类型" prop="memberTypeId">
+          <el-select v-model="consumeForm.memberTypeId" clearable placeholder="请选择消费类型">
+            <el-option
+              v-for="type in currentMember?.memberTypes || []"
+              :key="type.id"
+              :label="type.name"
+              :value="type.id"
+            />
+          </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -555,6 +830,130 @@ onMounted(async () => {
           <el-table-column prop="description" label="备注" />
         </el-table>
       </template>
+    </el-dialog>
+
+    <!-- 会员类型管理对话框 -->
+    <el-dialog
+      v-model="showMemberTypesDialog"
+      title="会员类型管理"
+      width="50%"
+    >
+      <div class="dialog-content">
+        <el-form
+          :model="memberTypeForm"
+          label-width="100px"
+          class="member-type-form"
+        >
+          <el-form-item label="类型名称" prop="name">
+            <el-input v-model="memberTypeForm.name" placeholder="请输入会员类型名称" />
+          </el-form-item>
+          <el-form-item label="会员类型" prop="type">
+            <el-select v-model="memberTypeForm.type" placeholder="请选择会员类型">
+              <el-option label="储值会员" value="stored" />
+              <el-option label="年卡会员" value="year" />
+              <el-option label="季卡会员" value="season" />
+              <el-option label="月卡会员" value="month" />
+              <el-option label="次卡会员" value="times" />
+              <el-option label="自定义会员" value="custom" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="有效期(天)" prop="duration_days" v-if="['year', 'season', 'month'].includes(memberTypeForm.type)">
+            <el-input-number v-model="memberTypeForm.duration_days" :min="1" />
+          </el-form-item>
+          <el-form-item label="使用次数" prop="total_times" v-if="memberTypeForm.type === 'times'">
+            <el-input-number v-model="memberTypeForm.total_times" :min="1" />
+          </el-form-item>
+          <el-form-item label="价格" prop="price">
+            <el-input-number v-model="memberTypeForm.price" :min="0" :precision="2" />
+          </el-form-item>
+          <el-form-item label="类型描述" prop="description">
+            <el-input
+              v-model="memberTypeForm.description"
+              type="textarea"
+              placeholder="请输入会员类型描述"
+            />
+          </el-form-item>
+          <el-form-item>
+            <el-button type="primary" @click="handleAddMemberType">添加类型</el-button>
+          </el-form-item>
+        </el-form>
+
+        <el-table :data="memberTypes" style="width: 100%">
+          <el-table-column prop="name" label="类型名称" />
+          <el-table-column prop="type" label="会员类型">
+            <template #default="{ row }">
+              {{ {
+                stored: '储值会员',
+                year: '年卡会员',
+                season: '季卡会员',
+                month: '月卡会员',
+                times: '次卡会员',
+                custom: '自定义会员'
+              }[row.type] }}
+            </template>
+          </el-table-column>
+          <el-table-column prop="price" label="价格">
+            <template #default="{ row }">
+              ¥{{ row.price }}
+            </template>
+          </el-table-column>
+          <el-table-column prop="description" label="描述" />
+          <el-table-column label="操作">
+            <template #default="{ row }">
+              <el-button type="danger" size="small" @click="handleDeleteMemberType(row)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+    </el-dialog>
+
+    <!-- 会员等级管理对话框 -->
+    <el-dialog
+      v-model="showPointLevelsDialog"
+      title="会员等级管理"
+      width="50%"
+    >
+      <div class="dialog-content">
+        <el-form
+          :model="pointLevelForm"
+          label-width="100px"
+          class="point-level-form"
+        >
+          <el-form-item label="等级名称" prop="name">
+            <el-input v-model="pointLevelForm.name" placeholder="请输入等级名称" />
+          </el-form-item>
+          <el-form-item label="所需积分" prop="min_points">
+            <el-input-number v-model="pointLevelForm.min_points" :min="0" />
+          </el-form-item>
+          <el-form-item label="折扣比例" prop="discount">
+            <el-input-number
+              v-model="pointLevelForm.discount"
+              :min="0"
+              :max="1"
+              :step="0.1"
+              :precision="2"
+            />
+          </el-form-item>
+          <el-form-item>
+            <el-button type="primary" @click="handleAddPointLevel">添加等级</el-button>
+          </el-form-item>
+        </el-form>
+
+        <el-table :data="pointLevels" style="width: 100%">
+          <el-table-column prop="name" label="等级名称" />
+          <el-table-column prop="min_points" label="所需积分" />
+          <el-table-column label="折扣">
+            <template #default="{ row }">
+              {{ (row.discount * 10).toFixed(1) }}折
+            </template>
+          </el-table-column>
+          <el-table-column label="操作">
+            <template #default="{ row }">
+              <el-button type="danger" size="small" @click="handleDeletePointLevel(row)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
     </el-dialog>
   </div>
 </template>
@@ -719,5 +1118,53 @@ onMounted(async () => {
   border-radius: 4px;
   font-size: 15px;
   font-weight: bold;
+}
+
+.member-balance-info {
+  background-color: #f8f9fa;
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.member-balance-info p {
+  margin: 8px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.discount-tip {
+  margin-left: 12px;
+  font-size: 14px;
+  color: #666;
+}
+
+:deep(.el-select) {
+  width: 100%;
+}
+
+:deep(.el-tag) {
+  margin: 0 4px;
+}
+
+.header-buttons {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.dialog-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.member-type-form,
+.point-level-form {
+  background-color: #f8f9fa;
+  padding: 20px;
+  border-radius: 8px;
+  margin-bottom: 20px;
 }
 </style>

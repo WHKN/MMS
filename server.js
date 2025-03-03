@@ -126,6 +126,7 @@ const db = new sqlite3.Database('vip.db', (err) => {
       phone TEXT UNIQUE NOT NULL,
       balance REAL DEFAULT 0,
       bonus_balance REAL DEFAULT 0,
+      points INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
 
@@ -138,12 +139,44 @@ const db = new sqlite3.Database('vip.db', (err) => {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(member_id) REFERENCES members(id)
     )`);
+
+    db.run(`CREATE TABLE IF NOT EXISTS member_types (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL,
+      duration_days INTEGER,
+      total_times INTEGER,
+      price REAL NOT NULL,
+      description TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`);
+
+    db.run(`CREATE TABLE IF NOT EXISTS member_type_relations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      member_id INTEGER NOT NULL,
+      type_id INTEGER NOT NULL,
+      start_date DATETIME NOT NULL,
+      end_date DATETIME,
+      remaining_times INTEGER,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(member_id) REFERENCES members(id),
+      FOREIGN KEY(type_id) REFERENCES member_types(id)
+    )`);
+
+    db.run(`CREATE TABLE IF NOT EXISTS point_levels (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      min_points INTEGER NOT NULL,
+      max_points INTEGER,
+      discount REAL NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`);
   }
 });
 
 // 会员管理API
 app.post('/api/members', (req, res) => {
-  const { name, phone, initialBalance, bonusAmount } = req.body;
+  const { name, phone, initialBalance, bonusAmount, memberTypes } = req.body;
   res.set('Content-Type', 'application/json');
 
   // 验证手机号格式
@@ -163,8 +196,8 @@ app.post('/api/members', (req, res) => {
   db.serialize(() => {
     db.run('BEGIN TRANSACTION');
 
-    db.run('INSERT INTO members (name, phone, balance, bonus_balance) VALUES (?, ?, ?, ?)', 
-      [name, phone, balance, bonusBalance], 
+    db.run('INSERT INTO members (name, phone, balance, bonus_balance, points) VALUES (?, ?, ?, ?, ?)', 
+      [name, phone, balance, bonusBalance, balance], 
       function(err) {
         if (err) {
           db.run('ROLLBACK');
@@ -178,50 +211,86 @@ app.post('/api/members', (req, res) => {
 
         const memberId = this.lastID;
 
-        // 如果有初始储值或赠费，添加交易记录
-        if (balance > 0 || bonusBalance > 0) {
-          const promises = [];
-          
-          if (balance > 0) {
-            promises.push(new Promise((resolve, reject) => {
-              db.run(
-                'INSERT INTO transactions (member_id, type, amount, description) VALUES (?, ?, ?, ?)',
-                [memberId, 'recharge', balance, '开卡初始储值'],
-                (err) => err ? reject(err) : resolve()
-              );
-            }));
-          }
-          
-          if (bonusBalance > 0) {
-            promises.push(new Promise((resolve, reject) => {
-              db.run(
-                'INSERT INTO transactions (member_id, type, amount, description) VALUES (?, ?, ?, ?)',
-                [memberId, 'bonus', bonusBalance, '开卡赠费'],
-                (err) => err ? reject(err) : resolve()
-              );
-            }));
-          }
+        // 创建一个数组来存储所有需要执行的Promise
+        const allPromises = [];
 
-          Promise.all(promises)
-            .then(() => {
-              db.run('COMMIT');
-              res.json({ id: memberId, name, phone, balance, bonus_balance: bonusBalance });
-            })
-            .catch(err => {
-              db.run('ROLLBACK');
-              res.status(400).json({ error: err.message });
+        // 添加会员类型关联
+        if (memberTypes && memberTypes.length > 0) {
+          const typePromises = memberTypes.map(type => {
+            return new Promise((resolve, reject) => {
+              const startDate = new Date();
+              const endDate = type.duration_days ? 
+                new Date(startDate.getTime() + type.duration_days * 24 * 60 * 60 * 1000) : 
+                null;
+              
+              db.run(
+                'INSERT INTO member_type_relations (member_id, type_id, start_date, end_date, remaining_times) VALUES (?, ?, ?, ?, ?)',
+                [memberId, type.id, startDate.toISOString(), endDate?.toISOString(), type.total_times],
+                (err) => err ? reject(err) : resolve()
+              );
             });
-        } else {
-          db.run('COMMIT');
-          res.json({ id: memberId, name, phone, balance: 0, bonus_balance: 0 });
+          });
+          allPromises.push(...typePromises);
         }
+
+        // 添加交易记录
+        if (balance > 0) {
+          allPromises.push(new Promise((resolve, reject) => {
+            db.run(
+              'INSERT INTO transactions (member_id, type, amount, description) VALUES (?, ?, ?, ?)',
+              [memberId, 'recharge', balance, '开卡初始储值'],
+              (err) => err ? reject(err) : resolve()
+            );
+          }));
+        }
+        
+        if (bonusBalance > 0) {
+          allPromises.push(new Promise((resolve, reject) => {
+            db.run(
+              'INSERT INTO transactions (member_id, type, amount, description) VALUES (?, ?, ?, ?)',
+              [memberId, 'bonus', bonusBalance, '开卡赠费'],
+              (err) => err ? reject(err) : resolve()
+            );
+          }));
+        }
+
+        // 等待所有操作完成后再提交事务并发送响应
+        Promise.all(allPromises)
+          .then(() => {
+            db.run('COMMIT');
+            res.json({ id: memberId, name, phone, balance, bonus_balance: bonusBalance });
+          })
+          .catch(err => {
+            db.run('ROLLBACK');
+            res.status(400).json({ error: err.message });
+          });
     });
   });
 });
 
 app.get('/api/members', (req, res) => {
   res.set('Content-Type', 'application/json');
-  db.all('SELECT *, (balance + bonus_balance) as totalBalance FROM members', [], (err, rows) => {
+  db.all(`
+    SELECT 
+      m.*, 
+      (m.balance + m.bonus_balance) as totalBalance,
+      GROUP_CONCAT(mt.name) as memberTypes,
+      pl.name as levelName,
+      pl.discount as levelDiscount
+    FROM members m
+    LEFT JOIN member_type_relations mtr ON m.id = mtr.member_id
+    LEFT JOIN member_types mt ON mtr.type_id = mt.id
+    LEFT JOIN (
+      SELECT pl1.*
+      FROM point_levels pl1
+      LEFT JOIN point_levels pl2 
+      ON pl1.min_points < pl2.min_points 
+      AND pl2.min_points <= (SELECT points FROM members WHERE id = members.id)
+      WHERE pl2.id IS NULL 
+      AND pl1.min_points <= (SELECT points FROM members WHERE id = members.id)
+    ) pl ON 1=1
+    GROUP BY m.id
+  `, [], (err, rows) => {
     if (err) {
       res.status(400).json({ error: err.message });
       return;
@@ -232,60 +301,103 @@ app.get('/api/members', (req, res) => {
 
 // 储值和消费API
 app.post('/api/transactions', (req, res) => {
-  const { member_id, type, amount, description } = req.body;
+  const { member_id, type, amount, description, member_type_id } = req.body;
   res.set('Content-Type', 'application/json');
-
-  // 如果是消费交易，直接进入处理流程
-  if (type === 'consume') {
-    processTransaction();
-  } else {
-    // 充值交易直接处理
-    processTransaction();
-  }
 
   function processTransaction() {
     db.serialize(() => {
       db.run('BEGIN TRANSACTION');
 
-      // 如果是消费，先检查总余额是否足够
       if (type === 'consume') {
-        db.get('SELECT balance, bonus_balance FROM members WHERE id = ?', [member_id], (err, row) => {
+        // 获取会员信息、会员类型和积分等级
+        db.get(`
+          SELECT 
+            m.*, 
+            pl.discount,
+            mtr.remaining_times,
+            mt.type as member_type
+          FROM members m
+          LEFT JOIN (
+            SELECT pl1.*
+            FROM point_levels pl1
+            LEFT JOIN point_levels pl2 ON pl1.min_points < pl2.min_points AND pl2.min_points <= (
+              SELECT points FROM members WHERE id = ?
+            )
+            WHERE pl2.id IS NULL AND pl1.min_points <= (
+              SELECT points FROM members WHERE id = ?
+            )
+          ) pl ON 1=1
+          LEFT JOIN member_type_relations mtr ON m.id = mtr.member_id AND mtr.type_id = ?
+          LEFT JOIN member_types mt ON mtr.type_id = mt.id
+          WHERE m.id = ?
+        `, [member_type_id || null, member_id], (err, row) => {
           if (err || !row) {
             db.run('ROLLBACK');
             res.status(400).json({ error: err ? err.message : '会员不存在' });
             return;
           }
-          
-          const balance = parseFloat(row.balance) || 0;
-          const bonusBalance = parseFloat(row.bonus_balance) || 0;
-          const totalBalance = balance + bonusBalance;
-          const consumeAmount = parseFloat(amount) || 0;
-          
-          // 检查消费金额是否有效
-          if (isNaN(consumeAmount) || consumeAmount <= 0) {
-            db.run('ROLLBACK');
-            res.status(400).json({ error: '消费金额无效' });
+
+          // 计算折扣后金额
+          const discount = row.discount || 1;
+          const discountedAmount = parseFloat((amount * discount).toFixed(2));
+
+          // 如果是次卡消费
+          if (member_type_id && row.member_type === 'times') {
+            if (!row.remaining_times || row.remaining_times <= 0) {
+              db.run('ROLLBACK');
+              res.status(400).json({ error: '次数已用完' });
+              return;
+            }
+
+            // 更新剩余次数
+            db.run('UPDATE member_type_relations SET remaining_times = remaining_times - 1 WHERE member_id = ? AND type_id = ?',
+              [member_id, member_type_id],
+              (err) => {
+                if (err) {
+                  db.run('ROLLBACK');
+                  res.status(400).json({ error: err.message });
+                  return;
+                }
+
+                // 添加消费记录
+                db.run(
+                  'INSERT INTO transactions (member_id, type, amount, description) VALUES (?, ?, ?, ?)',
+                  [member_id, 'consume', 0, description + ' (次卡消费)'],
+                  function(err) {
+                    if (err) {
+                      db.run('ROLLBACK');
+                      res.status(400).json({ error: err.message });
+                      return;
+                    }
+                    db.run('COMMIT');
+                    res.json({ id: this.lastID, member_id, type, amount: 0, description });
+                  }
+                );
+              }
+            );
             return;
           }
 
-          // 检查总余额是否足够
-          if (totalBalance < consumeAmount) {
+          // 储值卡消费逻辑
+          const balance = parseFloat(row.balance) || 0;
+          const bonusBalance = parseFloat(row.bonus_balance) || 0;
+          const totalBalance = balance + bonusBalance;
+
+          if (totalBalance < discountedAmount) {
             db.run('ROLLBACK');
             res.status(400).json({ error: '余额不足' });
             return;
           }
 
-          // 优先扣除赠费余额，但不能超过实际的赠费余额
-          const bonusToUse = Math.min(bonusBalance, consumeAmount);
-          const balanceToUse = consumeAmount - bonusToUse;
-          
-          // 检查储值余额是否足够支付剩余金额
+          const bonusToUse = Math.min(bonusBalance, discountedAmount);
+          const balanceToUse = discountedAmount - bonusToUse;
+
           if (balanceToUse > balance) {
             db.run('ROLLBACK');
             res.status(400).json({ error: '储值余额不足' });
             return;
           }
-          
+
           db.run('UPDATE members SET bonus_balance = bonus_balance - ?, balance = balance - ? WHERE id = ?',
             [bonusToUse, balanceToUse, member_id],
             function(err) {
@@ -295,10 +407,9 @@ app.post('/api/transactions', (req, res) => {
                 return;
               }
 
-              // 添加交易记录
               db.run(
                 'INSERT INTO transactions (member_id, type, amount, description) VALUES (?, ?, ?, ?)',
-                [member_id, type, amount, description],
+                [member_id, type, discountedAmount, `${description} (原价:${amount}, 折扣:${discount})`],
                 function(err) {
                   if (err) {
                     db.run('ROLLBACK');
@@ -306,16 +417,16 @@ app.post('/api/transactions', (req, res) => {
                     return;
                   }
                   db.run('COMMIT');
-                  res.json({ id: this.lastID, member_id, type, amount, description });
+                  res.json({ id: this.lastID, member_id, type, amount: discountedAmount, description });
                 }
               );
             }
           );
         });
-      } else if (type === 'bonus') {
-        // 赠费增加赠费余额
-        db.run('UPDATE members SET bonus_balance = bonus_balance + ? WHERE id = ?',
-          [amount, member_id],
+      } else if (type === 'recharge') {
+        // 充值时更新积分
+        db.run('UPDATE members SET balance = balance + ?, points = points + ? WHERE id = ?',
+          [amount, amount, member_id],
           function(err) {
             if (err) {
               db.run('ROLLBACK');
@@ -323,7 +434,6 @@ app.post('/api/transactions', (req, res) => {
               return;
             }
             
-            // 添加交易记录
             db.run(
               'INSERT INTO transactions (member_id, type, amount, description) VALUES (?, ?, ?, ?)',
               [member_id, type, amount, description],
@@ -340,8 +450,8 @@ app.post('/api/transactions', (req, res) => {
           }
         );
       } else {
-        // 充值增加储值余额
-        db.run('UPDATE members SET balance = balance + ? WHERE id = ?',
+        // 赠费充值
+        db.run('UPDATE members SET bonus_balance = bonus_balance + ? WHERE id = ?',
           [amount, member_id],
           function(err) {
             if (err) {
@@ -350,7 +460,6 @@ app.post('/api/transactions', (req, res) => {
               return;
             }
             
-            // 添加交易记录
             db.run(
               'INSERT INTO transactions (member_id, type, amount, description) VALUES (?, ?, ?, ?)',
               [member_id, type, amount, description],
@@ -369,6 +478,8 @@ app.post('/api/transactions', (req, res) => {
       }
     });
   }
+
+  processTransaction();
 });
 
 // 获取会员交易记录
@@ -388,7 +499,71 @@ app.get('/api/transactions/:memberId', (req, res) => {
   );
 });
 
+// 获取月度报表
+app.get('/api/monthly-report', authenticateToken, (req, res) => {
+  const { month } = req.query;
+  if (!month) {
+    res.status(400).json({ error: '请提供月份参数' });
+    return;
+  }
+
+  const startDate = new Date(month + '-01');
+  const endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0, 23, 59, 59);
+
+  db.get(`
+    SELECT
+      COALESCE(SUM(CASE WHEN type = 'recharge' THEN amount ELSE 0 END), 0) as totalRecharge,
+      COALESCE(SUM(CASE WHEN type = 'bonus' THEN amount ELSE 0 END), 0) as totalBonus,
+      COALESCE(SUM(CASE WHEN type = 'consume' THEN amount ELSE 0 END), 0) as totalConsume,
+      (SELECT COUNT(*) FROM members) as totalMembers,
+      (SELECT COUNT(*) FROM members WHERE balance + bonus_balance > 0) as validMembers
+    FROM transactions
+    WHERE created_at BETWEEN ? AND ?
+  `, [startDate.toISOString(), endDate.toISOString()], (err, row) => {
+    if (err) {
+      res.status(500).json({ error: '获取月度报表失败' });
+      return;
+    }
+    
+    const result = {
+      ...row,
+      totalRechargeWithBonus: row.totalRecharge + row.totalBonus
+    };
+    res.json(result);
+  });
+});
+
 // 获取会员信息
+// 删除会员类型
+app.delete('/api/member-types/:id', (req, res) => {
+  const { id } = req.params;
+  res.set('Content-Type', 'application/json');
+
+  db.serialize(() => {
+    db.run('BEGIN TRANSACTION');
+
+    // 先删除相关的会员类型关联
+    db.run('DELETE FROM member_type_relations WHERE type_id = ?', [id], (err) => {
+      if (err) {
+        db.run('ROLLBACK');
+        res.status(400).json({ error: err.message });
+        return;
+      }
+
+      // 然后删除会员类型
+      db.run('DELETE FROM member_types WHERE id = ?', [id], function(err) {
+        if (err) {
+          db.run('ROLLBACK');
+          res.status(400).json({ error: err.message });
+          return;
+        }
+        db.run('COMMIT');
+        res.json({ message: '会员类型删除成功' });
+      });
+    });
+  });
+});
+
 app.get('/api/members/:id', (req, res) => {
   const { id } = req.params;
   res.set('Content-Type', 'application/json');
@@ -441,6 +616,116 @@ app.put('/api/members/:id', (req, res) => {
       }
     );
   });
+});
+
+// 会员类型管理API
+app.get('/api/member-types', authenticateToken, (req, res) => {
+  res.set('Content-Type', 'application/json');
+  db.all('SELECT * FROM member_types', [], (err, rows) => {
+    if (err) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
+    res.json(rows);
+  });
+});
+
+// 更新会员类型
+app.put('/api/member-types/:id', authenticateToken, (req, res) => {
+  const { id } = req.params;
+  const { name, type, duration_days, total_times, price, description } = req.body;
+  res.set('Content-Type', 'application/json');
+
+  db.run(
+    'UPDATE member_types SET name = ?, type = ?, duration_days = ?, total_times = ?, price = ?, description = ? WHERE id = ?',
+    [name, type, duration_days, total_times, price, description, id],
+    function(err) {
+      if (err) {
+        res.status(400).json({ error: err.message });
+        return;
+      }
+      res.json({ message: '会员类型更新成功' });
+    }
+  );
+});
+
+app.post('/api/member-types', authenticateToken, (req, res) => {
+  const { name, type, duration_days, total_times, price, description } = req.body;
+  res.set('Content-Type', 'application/json');
+
+  db.run(
+    'INSERT INTO member_types (name, type, duration_days, total_times, price, description) VALUES (?, ?, ?, ?, ?, ?)',
+    [name, type, duration_days, total_times, price, description],
+    function(err) {
+      if (err) {
+        res.status(400).json({ error: err.message });
+        return;
+      }
+      res.json({ id: this.lastID, name, type, duration_days, total_times, price, description });
+    }
+  );
+});
+
+// 积分等级管理API
+// 删除积分等级
+app.delete('/api/point-levels/:id', authenticateToken, (req, res) => {
+  const { id } = req.params;
+  res.set('Content-Type', 'application/json');
+
+  db.run('DELETE FROM point_levels WHERE id = ?', [id], function(err) {
+    if (err) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
+    res.json({ message: '积分等级删除成功' });
+  });
+});
+
+app.get('/api/point-levels', authenticateToken, (req, res) => {
+  res.set('Content-Type', 'application/json');
+  db.all('SELECT * FROM point_levels ORDER BY min_points', [], (err, rows) => {
+    if (err) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
+    res.json(rows);
+  });
+});
+
+// 更新积分等级
+app.put('/api/point-levels/:id', authenticateToken, (req, res) => {
+  const { id } = req.params;
+  const { name, min_points, max_points, discount } = req.body;
+  res.set('Content-Type', 'application/json');
+
+  db.run(
+    'UPDATE point_levels SET name = ?, min_points = ?, max_points = ?, discount = ? WHERE id = ?',
+    [name, min_points, max_points, discount, id],
+    function(err) {
+      if (err) {
+        res.status(400).json({ error: err.message });
+        return;
+      }
+      res.json({ message: '积分等级更新成功' });
+    }
+  );
+});
+
+app.post('/api/point-levels', authenticateToken, (req, res) => {
+  const { name, min_points, max_points, discount } = req.body;
+  res.set('Content-Type', 'application/json');
+
+  db.run(
+    'INSERT INTO point_levels (name, min_points, max_points, discount) VALUES (?, ?, ?, ?)',
+    [name, min_points, max_points, discount],
+    function(err) {
+      if (err) {
+        res.status(400).json({ error: err.message });
+        return;
+      }
+      res.json({ id: this.lastID, name, min_points, max_points, discount });
+    }
+  );
 });
 
 // 月度报表API
