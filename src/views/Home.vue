@@ -294,7 +294,10 @@ const handleDeleteMember = async (member) => {
 }
 
 const openRechargeDialog = (member) => {
-  currentMember.value = member
+  currentMember.value = {
+    ...member,
+    memberTypes: Array.isArray(member.memberTypes) ? member.memberTypes : []
+  }
   rechargeForm.value = { 
   amount: 0, 
   description: '',
@@ -338,11 +341,30 @@ const handleRecharge = async () => {
       ElMessage.error('请输入有效的充值金额')
       return
     }
+
+    // 检查会员是否已有该类型，若没有则自动添加
+    const hasType = currentMember.value.memberTypes.some(t => t.id === rechargeForm.value.memberTypeId)
+    if (!hasType) {
+      await fetch(`http://localhost:3000/api/members/${currentMember.value.id}/types`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          type_id: rechargeForm.value.memberTypeId
+        })
+      })
+    }
     // 将充值金额转换为积分，1元=10积分
     // 仅普通储值计入可消费余额
-if (!['year', 'season', 'month', 'times'].includes(selectedType.type)) {
-  const points = Math.floor(rechargeForm.value.amount * 10);
-  rechargeForm.value.points = points;
+// 积分计算
+const points = Math.floor(rechargeForm.value.amount * 10);
+rechargeForm.value.points = points;
+
+// 余额处理
+if (selectedType.type === 'stored') {
+  rechargeForm.value.balance = rechargeForm.value.amount;
 }
 
     // 设置开始日期
@@ -987,7 +1009,7 @@ onMounted(async () => {
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="充值金额" prop="amount" v-if="rechargeForm.memberTypeId">
+        <el-form-item label="充值金额" prop="amount">
           <el-input-number v-model="rechargeForm.amount" :min="0" />
         </el-form-item>
         <el-form-item label="续期天数" prop="duration_days" v-if="rechargeForm.memberTypeId && ['year', 'season', 'month'].includes(memberTypes.find(t => t.id === rechargeForm.memberTypeId)?.type)">

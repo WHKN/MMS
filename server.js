@@ -490,11 +490,36 @@ app.post('/api/transactions', async (req, res) => {
                 );
               }
             );
-          } else {
-            // 储值卡充值逻辑
-            const durationDays = req.body.duration_days || memberType.duration_days;
+          } else if (memberType.type === 'stored') {
+            // 储值会员充值逻辑
             db.run('UPDATE members SET balance = balance + ?, points = points + ? WHERE id = ?',
-              [amount, amount, member_id],
+              [amount, Math.floor(amount * 10), member_id],
+              function(err) {
+                if (err) {
+                  db.run('ROLLBACK');
+                  res.status(400).json({ error: err.message });
+                  return;
+                }
+                db.run(
+                  'INSERT INTO transactions (member_id, type, amount, description) VALUES (?, ?, ?, ?)',
+                  [member_id, type, amount, description],
+                  function(err) {
+                    if (err) {
+                      db.run('ROLLBACK');
+                      res.status(400).json({ error: err.message });
+                      return;
+                    }
+                    db.run('COMMIT');
+                    res.json({ id: this.lastID, member_id, type, amount, description });
+                  }
+                );
+              }
+            );
+          } else {
+            // 其他类型会员充值逻辑
+            const durationDays = req.body.duration_days || memberType.duration_days;
+            db.run('UPDATE members SET points = points + ? WHERE id = ?',
+              [Math.floor(amount * 10), member_id],
               function(err) {
                 if (err) {
                   db.run('ROLLBACK');
