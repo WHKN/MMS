@@ -3,6 +3,13 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
+const addMemberForm = ref({
+  name: '',
+  phone: '',
+  initialBalance: 0,
+  bonusAmount: 0,
+  selectedTypes: []
+})
 const addMemberFormRef = ref(null)
 const router = useRouter()
 
@@ -17,7 +24,13 @@ const memberTransactions = ref([])
 const memberTypes = ref([])
 const pointLevels = ref([])
 
-// 表单数据
+// 充值表单数据
+const rechargeForm = ref({
+  amount: 0,
+  description: ''
+})
+
+// 消费表单数据
 const consumeForm = ref({
   amount: 0,
   description: '',
@@ -25,14 +38,23 @@ const consumeForm = ref({
   discountedAmount: 0
 })
 
-const addMemberForm = ref({
+// 添加会员等级表单数据
+const pointLevelForm = ref({
   name: '',
-  phone: '',
-  initialBalance: 0,
-  bonusAmount: 0,
-  selectedTypes: []
+  min_points: 0,
+  discount: 1
 })
 
+// 添加对话框显示状态控制变量
+const showAddMemberDialog = ref(false)
+const showEditDialog = ref(false)
+const showRechargeDialog = ref(false)
+const showConsumeDialog = ref(false)
+const showMemberDetailsDialog = ref(false)
+const showMemberTypesDialog = ref(false)
+const showPointLevelsDialog = ref(false)
+
+// 添加过滤后的会员列表计算属性
 const filteredMembers = computed(() => {
   if (!searchQuery.value) return members.value
   const query = searchQuery.value.toLowerCase()
@@ -42,33 +64,70 @@ const filteredMembers = computed(() => {
   )
 })
 
-// 对话框状态
-const showAddMemberDialog = ref(false)
-const showEditDialog = ref(false)
-const showRechargeDialog = ref(false)
-const showConsumeDialog = ref(false)
-const showMemberDetailsDialog = ref(false)
-const showMemberTypesDialog = ref(false)
-const showPointLevelsDialog = ref(false)
-
-// 会员类型和等级表单数据
-const memberTypeForm = ref({
+const editMemberForm = ref({
   name: '',
-  type: '',
-  duration_days: null,
-  total_times: null,
-  price: 0,
-  description: ''
+  phone: '',
+  selectedTypes: []
 })
+const openEditDialog = (member) => {
+  currentMember.value = member
+  editMemberForm.value = {
+    name: member.name,
+    phone: member.phone,
+    selectedTypes: member.memberTypes ? member.memberTypes.map(t => t.id) : []
+  }
+  showEditDialog.value = true
+}
 
-const pointLevelForm = ref({
-  name: '',
-  min_points: 0,
-  discount: 1
-})
-const memberFormRules = {
-  name: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
-  phone: [{ required: true, message: '请输入手机号', trigger: 'blur' }]
+const handleEditMember = async () => {
+  try {
+    if (!editMemberForm.value.selectedTypes || editMemberForm.value.selectedTypes.length === 0) {
+      ElMessage.error('请选择至少一个会员类型')
+      return
+    }
+
+    // 验证所选会员类型是否有效
+    const invalidTypes = editMemberForm.value.selectedTypes.filter(id => 
+      !memberTypes.value.find(t => t.id === id)
+    )
+    if (invalidTypes.length > 0) {
+      ElMessage.error('包含无效的会员类型选择')
+      return
+    }
+
+    const response = await fetch(`http://localhost:3000/api/members/${currentMember.value.id}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        ...editMemberForm.value,
+        memberTypes: editMemberForm.value.selectedTypes.map(id => {
+          const memberType = memberTypes.value.find(t => t.id === id)
+          return {
+            id: id,
+            type: memberType.type,
+            name: memberType.name,
+            duration_days: memberType.duration_days,
+            total_times: memberType.total_times
+          }
+        })
+      })
+    })
+
+    if (response.ok) {
+      ElMessage.success('更新会员信息成功')
+      showEditDialog.value = false
+      await fetchMembers()
+    } else {
+      const error = await response.json()
+      ElMessage.error(error.error || '更新会员信息失败')
+    }
+  } catch (error) {
+    console.error('编辑会员失败:', error)
+    ElMessage.error('更新会员信息失败')
+  }
 }
 const fetchMembers = async () => {
   try {
@@ -125,31 +184,6 @@ const handleAddMember = async () => {
     ElMessage.error('添加会员失败')
   }
 }
-const handleEditMember = async () => {
-  try {
-    const response = await fetch(`http://localhost:3000/api/members/${currentMember.value.id}`, {
-      method: 'PUT',
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        ...editMemberForm.value,
-        memberTypes: editMemberForm.value.selectedTypes
-      })
-    })
-    if (response.ok) {
-      ElMessage.success('更新会员信息成功')
-      showEditDialog.value = false
-      await fetchMembers()
-    } else {
-      const error = await response.json()
-      ElMessage.error(error.error || '更新会员信息失败')
-    }
-  } catch (error) {
-    ElMessage.error('更新会员信息失败')
-  }
-}
 const handleDeleteMember = async (member) => {
   try {
     await ElMessageBox.confirm(
@@ -190,8 +224,36 @@ const openRechargeDialog = (member) => {
   showRechargeDialog.value = true
 }
 
+const openConsumeDialog = (member) => {
+  currentMember.value = member
+  consumeForm.value = {
+    amount: 0,
+    description: '',
+    memberTypeId: null,
+    discountedAmount: 0
+  }
+  showConsumeDialog.value = true
+}
+
 const handleRecharge = async () => {
   try {
+    // 表单验证
+    if (!rechargeForm.value.amount || rechargeForm.value.amount <= 0) {
+      ElMessage.error('请输入有效的充值金额')
+      return
+    }
+
+    // 确认充值操作
+    await ElMessageBox.confirm(
+      `确定为会员 ${currentMember.value.name} 充值 ${rechargeForm.value.amount} 元吗？`,
+      '充值确认',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+
     const response = await fetch('http://localhost:3000/api/transactions', {
       method: 'POST',
       headers: {
@@ -202,41 +264,54 @@ const handleRecharge = async () => {
         member_id: currentMember.value.id,
         type: 'recharge',
         amount: rechargeForm.value.amount,
-        description: rechargeForm.value.description
+        description: rechargeForm.value.description || `会员储值 ${rechargeForm.value.amount} 元`
       })
     })
+
     if (response.ok) {
-      ElMessage.success('充值成功')
+      ElMessage.success('储值成功')
       showRechargeDialog.value = false
-      await fetchMembers()
-      await fetchMonthlyReport()
+      await Promise.all([
+        fetchMembers(),
+        fetchMonthlyReport()
+      ])
     } else {
       const error = await response.json()
-      ElMessage.error(error.error || '充值失败')
+      ElMessage.error(error.error || '储值失败')
     }
   } catch (error) {
-    ElMessage.error('充值失败')
+    if (error !== 'cancel') {
+      ElMessage.error('储值操作失败')
+      console.error('储值错误:', error)
+    }
   }
 }
-
-const openConsumeDialog = (member) => {
-  currentMember.value = member
-  consumeForm.value = { 
-    amount: 0, 
-    description: '',
-    memberTypeId: null,
-    discountedAmount: 0
-  }
-  showConsumeDialog.value = true
-}
-
-// 监听消费金额变化
-watch(() => consumeForm.value.amount, (newAmount) => {
-  consumeForm.value.discountedAmount = calculateDiscountedAmount(newAmount, currentMember.value)
-})
 
 const handleConsume = async () => {
   try {
+    // 表单验证
+    if (!consumeForm.value.amount || consumeForm.value.amount <= 0) {
+      ElMessage.error('请输入有效的消费金额')
+      return
+    }
+
+    // 如果选择了会员类型，验证是否为有效选择
+    if (consumeForm.value.memberTypeId && !memberTypes.value.find(type => type.id === consumeForm.value.memberTypeId)) {
+      ElMessage.error('请选择有效的会员类型')
+      return
+    }
+
+    // 确认消费操作
+    await ElMessageBox.confirm(
+      `确定为会员 ${currentMember.value.name} 消费 ${consumeForm.value.amount} 元吗？`,
+      '消费确认',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+
     const response = await fetch('http://localhost:3000/api/transactions', {
       method: 'POST',
       headers: {
@@ -247,7 +322,7 @@ const handleConsume = async () => {
         member_id: currentMember.value.id,
         type: 'consume',
         amount: consumeForm.value.amount,
-        description: consumeForm.value.description,
+        description: consumeForm.value.description || `会员消费 ${consumeForm.value.amount} 元`,
         member_type_id: consumeForm.value.memberTypeId
       })
     })
@@ -257,7 +332,8 @@ const handleConsume = async () => {
       consumeForm.value = {
         amount: 0,
         description: '',
-        memberTypeId: null
+        memberTypeId: null,
+        discountedAmount: 0
       }
       await Promise.all([
         fetchMembers(),
@@ -269,10 +345,12 @@ const handleConsume = async () => {
       ElMessage.error(error.error || '消费失败')
     }
   } catch (error) {
-    ElMessage.error('消费失败')
+    if (error !== 'cancel') {
+      ElMessage.error('消费操作失败')
+      console.error('消费错误:', error)
+    }
   }
 }
-
 const showMemberDetails = async (member) => {
   currentMember.value = member
   showMemberDetailsDialog.value = true
@@ -372,25 +450,55 @@ const fetchPointLevels = async () => {
 }
 
 // 添加会员类型
+const memberTypeForm = ref({
+  name: '',
+  type: '',
+  duration_days: null,
+  total_times: null,
+  price: 0,
+  description: ''
+})
+
+const memberTypeFormRef = ref(null)
+
+const memberTypeFormRules = {
+  name: [
+    { required: true, message: '请输入会员类型名称', trigger: 'blur' },
+    { min: 2, max: 20, message: '长度在 2 到 20 个字符', trigger: 'blur' }
+  ],
+  type: [
+    { required: true, message: '请选择会员类型', trigger: 'change' }
+  ],
+  duration_days: [
+    { required: true, message: '请输入有效期天数', trigger: 'blur', type: 'number' }
+  ],
+  total_times: [
+    { required: true, message: '请输入使用次数', trigger: 'blur', type: 'number' }
+  ],
+  price: [
+    { required: true, message: '请输入价格', trigger: 'blur', type: 'number' },
+    { type: 'number', min: 0, message: '价格必须大于等于0', trigger: 'blur' }
+  ]
+}
+
+const resetMemberTypeForm = () => {
+  memberTypeForm.value = {
+    name: '',
+    type: '',
+    duration_days: null,
+    total_times: null,
+    price: 0,
+    description: ''
+  }
+  if (memberTypeFormRef.value) {
+    memberTypeFormRef.value.resetFields()
+  }
+}
+
 const handleAddMemberType = async () => {
+  if (!memberTypeFormRef.value) return
   try {
-    // 表单验证
-    if (!memberTypeForm.value.name || !memberTypeForm.value.type) {
-      ElMessage.error('请填写必要的会员类型信息')
-      return
-    }
-
-    // 验证特定类型的必填字段
-    if (['year', 'season', 'month'].includes(memberTypeForm.value.type) && !memberTypeForm.value.duration_days) {
-      ElMessage.error('请填写会员有效期')
-      return
-    }
-
-    if (memberTypeForm.value.type === 'times' && !memberTypeForm.value.total_times) {
-      ElMessage.error('请填写使用次数')
-      return
-    }
-
+    await memberTypeFormRef.value.validate()
     const response = await fetch('http://localhost:3000/api/member-types', {
       method: 'POST',
       headers: {
@@ -402,21 +510,19 @@ const handleAddMemberType = async () => {
 
     if (response.ok) {
       ElMessage.success('添加会员类型成功')
-      memberTypeForm.value = {
-        name: '',
-        type: '',
-        duration_days: null,
-        total_times: null,
-        price: 0,
-        description: ''
-      }
+      resetMemberTypeForm()
       await fetchMemberTypes()
     } else {
       const error = await response.json()
       ElMessage.error(error.error || '添加会员类型失败')
     }
   } catch (error) {
-    ElMessage.error('添加会员类型失败')
+    if (error.name === 'ValidationError') {
+      ElMessage.error('请填写必要的会员类型信息')
+    } else {
+      ElMessage.error('添加会员类型失败')
+      console.error('添加会员类型错误:', error)
+    }
   }
 }
 
@@ -840,7 +946,9 @@ onMounted(async () => {
     >
       <div class="dialog-content">
         <el-form
+          ref="memberTypeFormRef"
           :model="memberTypeForm"
+          :rules="memberTypeFormRules"
           label-width="100px"
           class="member-type-form"
         >
@@ -875,6 +983,7 @@ onMounted(async () => {
           </el-form-item>
           <el-form-item>
             <el-button type="primary" @click="handleAddMemberType">添加类型</el-button>
+            <el-button @click="resetMemberTypeForm">重置</el-button>
           </el-form-item>
         </el-form>
 
