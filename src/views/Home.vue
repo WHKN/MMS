@@ -11,6 +11,78 @@ const addMemberForm = ref({
   selectedTypes: []
 })
 const addMemberFormRef = ref(null)
+
+const transactionFormRules = {
+  memberTypeId: [
+    { required: true, message: '请选择会员类型', trigger: 'change' }
+  ],
+  amount: [
+    { required: true, message: '请输入充值金额', trigger: 'blur', type: 'number' },
+    { type: 'number', min: 0, message: '金额必须大于等于0', trigger: 'blur' }
+  ],
+  duration_days: [
+    {
+      required: true,
+      validator: (rule, value, callback) => {
+        const type = memberTypes.value.find(t => t.id === rechargeForm.memberTypeId)?.type
+        if (['year', 'season', 'month'].includes(type) && (value === null || value <= 0)) {
+          callback(new Error('请输入有效天数'))
+        } else {
+          callback()
+        }
+      },
+      trigger: 'blur'
+    }
+  ],
+  times: [
+    {
+      required: true,
+      validator: (rule, value, callback) => {
+        const type = memberTypes.value.find(t => t.id === rechargeForm.memberTypeId)?.type
+        if (type === 'times' && (value === null || value <= 0 || value % 1 !== 0)) {
+          callback(new Error('请输入有效次数'))
+        } else {
+          callback()
+        }
+      },
+      trigger: 'blur'
+    }
+  ],
+  times: [
+    {
+      required: true,
+      validator: (rule, value, callback) => {
+        const type = memberTypes.value.find(t => t.id === rechargeForm.memberTypeId)?.type
+        if (type === 'times') {
+          if (value === null || value <= 0) {
+            callback(new Error('请输入有效的充值次数'))
+            return
+          }
+          if (value % 1 !== 0) {
+            callback(new Error('次数必须为整数'))
+            return
+          }
+        }
+        callback()
+      },
+      trigger: 'blur'
+    }
+  ]
+}
+
+const memberFormRules = {
+  name: [
+    { required: true, message: '请输入会员姓名', trigger: 'blur' },
+    { min: 2, max: 10, message: '姓名长度在2到10个字符', trigger: 'blur' }
+  ],
+  phone: [
+    { required: true, message: '请输入手机号码', trigger: 'blur' },
+    { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号码格式', trigger: 'blur' }
+  ],
+  selectedTypes: [
+    { required: true, message: '请选择至少一个会员类型', trigger: 'change' }
+  ]
+}
 const router = useRouter()
 
 // 数据状态
@@ -74,7 +146,7 @@ const openEditDialog = (member) => {
   editMemberForm.value = {
     name: member.name,
     phone: member.phone,
-    selectedTypes: member.memberTypes ? member.memberTypes.map(t => t.id) : []
+    selectedTypes: (member.memberTypes || []).map(t => t.id)
   }
   showEditDialog.value = true
 }
@@ -138,7 +210,10 @@ const fetchMembers = async () => {
       }
     })
     if (response.ok) {
-      members.value = await response.json()
+      members.value = (await response.json()).map(member => ({
+        ...member,
+        memberTypes: member.memberTypes || []
+      }))
     } else {
       const error = await response.json()
       ElMessage.error(error.error || '获取会员列表失败')
@@ -220,7 +295,12 @@ const handleDeleteMember = async (member) => {
 
 const openRechargeDialog = (member) => {
   currentMember.value = member
-  rechargeForm.value = { amount: 0, description: '' }
+  rechargeForm.value = { 
+  amount: 0, 
+  description: '',
+  duration_days: null,
+  times: null
+}
   showRechargeDialog.value = true
 }
 
@@ -235,13 +315,38 @@ const openConsumeDialog = (member) => {
   showConsumeDialog.value = true
 }
 
+const handleMemberTypeChange = (typeId) => {
+  const selectedType = memberTypes.value.find(t => t.id === typeId)
+  if (selectedType) {
+    rechargeForm.value = {
+      ...rechargeForm.value,
+      duration_days: selectedType.duration_days || 365,
+      times: selectedType.total_times || 365
+    }
+  }
+}
+
 const handleRecharge = async () => {
   try {
     // 表单验证
+    const selectedType = memberTypes.value.find(t => t.id === rechargeForm.value.memberTypeId)
+    if (!selectedType) {
+      ElMessage.error('请选择会员类型')
+      return
+    }
     if (!rechargeForm.value.amount || rechargeForm.value.amount <= 0) {
       ElMessage.error('请输入有效的充值金额')
       return
     }
+    // 将充值金额转换为积分，1元=10积分
+    // 仅普通储值计入可消费余额
+if (!['year', 'season', 'month', 'times'].includes(selectedType.type)) {
+  const points = Math.floor(rechargeForm.value.amount * 10);
+  rechargeForm.value.points = points;
+}
+
+    // 设置开始日期
+    const startDate = new Date().toISOString().slice(0, 10);
 
     // 确认充值操作
     await ElMessageBox.confirm(
@@ -254,6 +359,19 @@ const handleRecharge = async () => {
       }
     )
 
+    // 创建交易
+    const rechargeResponse = await fetch('http://localhost:3000/api/transactions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        ...rechargeForm.value,
+        start_date: startDate
+      })
+    });
+
     const response = await fetch('http://localhost:3000/api/transactions', {
       method: 'POST',
       headers: {
@@ -263,8 +381,14 @@ const handleRecharge = async () => {
       body: JSON.stringify({
         member_id: currentMember.value.id,
         type: 'recharge',
+        member_type_id: rechargeForm.value.memberTypeId,
         amount: rechargeForm.value.amount,
-        description: rechargeForm.value.description || `会员储值 ${rechargeForm.value.amount} 元`
+        duration_days: rechargeForm.value.duration_days,
+        times: rechargeForm.value.times,
+        description: rechargeForm.value.description || 
+          (rechargeForm.value.memberTypeId 
+            ? `${memberTypes.value.find(t => t.id === rechargeForm.value.memberTypeId)?.name}充值` 
+            : `会员储值 ${rechargeForm.value.amount} 元`)
       })
     })
 
@@ -850,8 +974,27 @@ onMounted(async () => {
         :rules="transactionFormRules"
         label-width="100px"
       >
-        <el-form-item label="充值金额" prop="amount">
+        <el-form-item label="会员类型" prop="memberTypeId" key="memberType">
+          <el-select 
+            v-model="rechargeForm.memberTypeId" 
+            @change="handleMemberTypeChange"
+            placeholder="请选择会员类型">
+            <el-option
+              v-for="type in memberTypes"
+              :key="type.id"
+              :label="type.name"
+              :value="type.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="充值金额" prop="amount" v-if="rechargeForm.memberTypeId">
           <el-input-number v-model="rechargeForm.amount" :min="0" />
+        </el-form-item>
+        <el-form-item label="续期天数" prop="duration_days" v-if="rechargeForm.memberTypeId && ['year', 'season', 'month'].includes(memberTypes.find(t => t.id === rechargeForm.memberTypeId)?.type)">
+          <el-input-number v-model="rechargeForm.duration_days" :min="1" />
+        </el-form-item>
+        <el-form-item label="充值次数" prop="times" v-if="rechargeForm.memberTypeId && memberTypes.find(t => t.id === rechargeForm.memberTypeId)?.type === 'times'">
+          <el-input-number v-model="rechargeForm.times" :min="1" />
         </el-form-item>
         <el-form-item label="备注" prop="description">
           <el-input v-model="rechargeForm.description" type="textarea" />
