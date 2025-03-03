@@ -804,7 +804,7 @@ onMounted(async () => {
       <el-main style="height: calc(100vh - 60px); padding: 20px; overflow: hidden;">
         <el-row :gutter="20" style="height: 100%;">
           <!-- 月度统计卡片 -->
-          <el-col :span="24" :lg="8" style="height: 100%;">
+          <el-col :span="24" :lg="6" style="height: 100%;">
             <el-card class="full-height-card">
               <template #header>
                 <div class="card-header">
@@ -846,7 +846,7 @@ onMounted(async () => {
             </el-card>
           </el-col>
           <!-- 会员列表卡片 -->
-          <el-col :span="24" :lg="16" style="height: 100%;">
+          <el-col :span="24" :lg="18" style="height: 100%;">
             <el-card class="full-height-card">
               <template #header>
                 <div class="card-header">
@@ -867,15 +867,15 @@ onMounted(async () => {
                 </div>
 
                 <el-table :data="filteredMembers" style="width: 100%">
-                  <el-table-column prop="name" label="姓名" width="150%" />
-                  <el-table-column prop="phone" label="手机号" width="200%" />
-                  <el-table-column prop="memberTypes" label="会员类型" width="200%">
+                  <el-table-column prop="name" label="姓名" align="center" header-align="center" />
+                  <el-table-column prop="phone" label="手机号" align="center" header-align="center" />
+                  <el-table-column prop="memberTypes" label="会员类型" align="center" header-align="center">
                     <template #default="{ row }">
                       <el-tag v-if="row.memberTypes" type="success" effect="plain">{{ row.memberTypes }}</el-tag>
                       <el-tag v-else type="info" effect="plain">普通会员</el-tag>
                     </template>
                   </el-table-column>
-                  <el-table-column label="会员等级" width="200%">
+                  <el-table-column label="会员等级" align="center" header-align="center">
                     <template #default="{ row }">
                       <el-tag v-if="row.levelName" type="warning" effect="plain">
                         {{ row.levelName }} ({{ (row.levelDiscount * 10).toFixed(1) }}折)
@@ -883,13 +883,13 @@ onMounted(async () => {
                       <el-tag v-else type="info" effect="plain">普通会员</el-tag>
                     </template>
                   </el-table-column>
-                  <el-table-column label="余额" width="180%">
+                  <el-table-column label="余额" align="center" header-align="center">
                     <template #default="{ row }">
                       <span :class="row.totalBalance > 0 ? 'amount-plus' : 'amount-minus'">¥{{ row.totalBalance }}</span>
                     </template>
                   </el-table-column>
                   
-                  <el-table-column label="操作" min-width="350%">
+                  <el-table-column label="操作" min-width="150%" align="center" header-align="center" >
                     <template #default="{ row }">
                       <el-button-group>
                         <el-button type="primary" @click="openRechargeDialog(row)">充值</el-button>
