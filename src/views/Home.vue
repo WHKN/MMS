@@ -356,10 +356,10 @@ const handleRecharge = async () => {
         })
       })
     }
-    // 将充值金额转换为积分，1元=10积分
+    // 将充值金额转换为积分，1元=1积分
     // 仅普通储值计入可消费余额
 // 积分计算
-const points = Math.floor(rechargeForm.value.amount * 10);
+const points = Math.floor(rechargeForm.value.amount);
 rechargeForm.value.points = points;
 
 // 余额处理
