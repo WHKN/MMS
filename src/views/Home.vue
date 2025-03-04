@@ -238,10 +238,35 @@ const handleAddMember = async () => {
         ...addMemberForm.value,
         // 计算开卡积分：充值金额转积分（1元=1积分）+ 现有积分，不包含赠费金额
         points: (addMemberForm.value.initialBalance || 0) + (addMemberForm.value.points || 0),
-        memberTypes: addMemberForm.value.selectedTypes.map(id => ({
-          id: id,
-          type: memberTypes.value.find(t => t.id === id)?.type
-        }))
+        memberTypes: addMemberForm.value.selectedTypes.map(id => {
+          const memberType = memberTypes.value.find(t => t.id === id);
+          const startDate = new Date().toISOString().slice(0, 10);
+          let endDate = null;
+          let remainingTimes = null;
+
+          if (memberType) {
+            if (['year', 'season', 'month'].includes(memberType.type)) {
+              const durationDays = memberType.duration_days || {
+                year: 365,
+                season: 90,
+                month: 30
+              }[memberType.type];
+              const endDateObj = new Date();
+              endDateObj.setDate(endDateObj.getDate() + durationDays);
+              endDate = endDateObj.toISOString().slice(0, 10);
+            } else if (memberType.type === 'times') {
+              remainingTimes = memberType.total_times;
+            }
+          }
+
+          return {
+            id: id,
+            type: memberType?.type,
+            start_date: startDate,
+            end_date: endDate,
+            remaining_times: remainingTimes
+          };
+        })
       })
     })
     if (response.ok) {
@@ -362,18 +387,29 @@ const handleRecharge = async () => {
       })
     }
     // 将充值金额转换为积分，1元=1积分
-    // 仅普通储值计入可消费余额
-// 积分计算
-const points = Math.floor(rechargeForm.value.amount);
-rechargeForm.value.points = points;
+    const points = Math.floor(rechargeForm.value.amount);
+    rechargeForm.value.points = points;
 
-// 余额处理
-if (selectedType.type === 'stored') {
-  rechargeForm.value.balance = rechargeForm.value.amount;
-}
-
-    // 设置开始日期
+    // 根据会员类型处理余额、有效期和次数
     const startDate = new Date().toISOString().slice(0, 10);
+    let endDate = null;
+
+    if (selectedType.type === 'stored') {
+      rechargeForm.value.balance = rechargeForm.value.amount;
+    } else if (['year', 'season', 'month'].includes(selectedType.type)) {
+      // 计算有效期结束日期
+      const durationDays = selectedType.duration_days || {
+        year: 365,
+        season: 90,
+        month: 30
+      }[selectedType.type];
+      const endDateObj = new Date();
+      endDateObj.setDate(endDateObj.getDate() + durationDays);
+      endDate = endDateObj.toISOString().slice(0, 10);
+    } else if (selectedType.type === 'times') {
+      // 设置次数
+      rechargeForm.value.remaining_times = selectedType.total_times;
+    }
 
     // 确认充值操作
     await ElMessageBox.confirm(
@@ -410,8 +446,9 @@ if (selectedType.type === 'stored') {
         type: 'recharge',
         member_type_id: rechargeForm.value.memberTypeId,
         amount: rechargeForm.value.amount,
-        duration_days: rechargeForm.value.duration_days,
-        times: rechargeForm.value.times,
+        start_date: startDate,
+        end_date: endDate,
+        remaining_times: rechargeForm.value.remaining_times,
         description: rechargeForm.value.description || 
           (rechargeForm.value.memberTypeId 
             ? `${memberTypes.value.find(t => t.id === rechargeForm.value.memberTypeId)?.name}充值` 

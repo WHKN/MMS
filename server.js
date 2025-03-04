@@ -221,13 +221,27 @@ app.post('/api/members', async (req, res) => {
               const typePromises = memberTypes.map(type => {
                 return new Promise((resolve, reject) => {
                   const startDate = new Date();
-                  const endDate = type.duration_days ? 
-                    new Date(startDate.getTime() + type.duration_days * 24 * 60 * 60 * 1000) : 
-                    null;
+                  let endDate = null;
+                  let remainingTimes = null;
+
+                  // 根据会员类型设置end_date和remaining_times
+                  if (type.type === 'times') {
+                    remainingTimes = type.total_times;
+                  } else if (['year', 'season', 'month', 'custom'].includes(type.type)) {
+                    const durationDays = type.duration_days || {
+                      year: 365,
+                      season: 90,
+                      month: 30
+                    }[type.type];
+                    
+                    if (durationDays) {
+                      endDate = new Date(startDate.getTime() + durationDays * 24 * 60 * 60 * 1000);
+                    }
+                  }
                   
                   db.run(
                     'INSERT INTO member_type_relations (member_id, type_id, start_date, end_date, remaining_times) VALUES (?, ?, ?, ?, ?)',
-                    [memberId, type.id, startDate.toISOString(), endDate?.toISOString(), type.total_times],
+                    [memberId, type.id, startDate.toISOString(), endDate?.toISOString(), remainingTimes],
                     (err) => err ? reject(err) : resolve()
                   );
                 });
