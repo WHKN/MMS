@@ -493,7 +493,7 @@ app.post('/api/transactions', async (req, res) => {
           } else if (memberType.type === 'stored') {
             // 储值会员充值逻辑
             db.run('UPDATE members SET balance = balance + ?, points = points + ? WHERE id = ?',
-              [amount, Math.floor(amount * 10), member_id],
+              [amount, Math.floor(amount), member_id],
               function(err) {
                 if (err) {
                   db.run('ROLLBACK');
