@@ -236,7 +236,8 @@ const handleAddMember = async () => {
       },
       body: JSON.stringify({
         ...addMemberForm.value,
-        points: addMemberForm.value.points || 0, // 添加积分字段
+        // 计算开卡积分：充值金额转积分（1元=1积分）+ 现有积分，不包含赠费金额
+        points: (addMemberForm.value.initialBalance || 0) + (addMemberForm.value.points || 0),
         memberTypes: addMemberForm.value.selectedTypes.map(id => ({
           id: id,
           type: memberTypes.value.find(t => t.id === id)?.type
