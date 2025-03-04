@@ -8,7 +8,8 @@ const addMemberForm = ref({
   phone: '',
   initialBalance: 0,
   bonusAmount: 0,
-  selectedTypes: []
+  selectedTypes: [],
+  points: 0
 })
 const addMemberFormRef = ref(null)
 
@@ -139,7 +140,8 @@ const filteredMembers = computed(() => {
 const editMemberForm = ref({
   name: '',
   phone: '',
-  selectedTypes: []
+  selectedTypes: [],
+  points: 0
 })
 const openEditDialog = (member) => {
   currentMember.value = member
@@ -234,6 +236,7 @@ const handleAddMember = async () => {
       },
       body: JSON.stringify({
         ...addMemberForm.value,
+        points: addMemberForm.value.points || 0, // 添加积分字段
         memberTypes: addMemberForm.value.selectedTypes.map(id => ({
           id: id,
           type: memberTypes.value.find(t => t.id === id)?.type
@@ -248,7 +251,8 @@ const handleAddMember = async () => {
         phone: '',
         initialBalance: 0,
         bonusAmount: 0,
-        selectedTypes: []
+        selectedTypes: [],
+  points: 0
       }
       await fetchMembers()
     } else {
@@ -777,6 +781,13 @@ const handleDeletePointLevel = async (pointLevel) => {
   }
 }
 
+watch(() => addMemberForm.value.selectedTypes, (newVal) => {
+  addMemberForm.value.points = newVal.reduce((sum, typeId) => {
+    const type = memberTypes.value.find(t => t.id === typeId)
+    return sum + (type?.price || 0)
+  }, 0)
+})
+
 onMounted(async () => {
   await Promise.all([
     fetchMembers(),
@@ -931,6 +942,9 @@ onMounted(async () => {
         </el-form-item>
         <el-form-item label="赠费金额" prop="bonusAmount">
           <el-input-number v-model="addMemberForm.bonusAmount" :min="0" />
+        </el-form-item>
+        <el-form-item label="类型积分" prop="points">
+          <el-input-number v-model="addMemberForm.points" :min="0" :disabled="true" />
         </el-form-item>
         <el-form-item label="会员类型" prop="selectedTypes">
           <el-select v-model="addMemberForm.selectedTypes" multiple placeholder="请选择会员类型">

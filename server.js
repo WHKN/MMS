@@ -199,7 +199,7 @@ app.post('/api/members', async (req, res) => {
         db.run('BEGIN TRANSACTION');
 
         db.run('INSERT INTO members (name, phone, balance, bonus_balance, points) VALUES (?, ?, ?, ?, ?)', 
-          [name, phone, balance, bonusBalance, balance], 
+          [name, phone, balance, bonusBalance, req.body.points || 0], 
           function(err) {
             if (err) {
               db.run('ROLLBACK');
