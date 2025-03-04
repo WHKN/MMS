@@ -943,7 +943,7 @@ onMounted(async () => {
         <el-form-item label="赠费金额" prop="bonusAmount">
           <el-input-number v-model="addMemberForm.bonusAmount" :min="0" />
         </el-form-item>
-        <el-form-item label="类型积分" prop="points">
+        <el-form-item label="累计积分" prop="points">
           <el-input-number v-model="addMemberForm.points" :min="0" :disabled="true" />
         </el-form-item>
         <el-form-item label="会员类型" prop="selectedTypes">
