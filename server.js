@@ -514,17 +514,29 @@ app.post('/api/transactions', async (req, res) => {
                   res.status(400).json({ error: err.message });
                   return;
                 }
-                db.run(
-                  'INSERT INTO transactions (member_id, type, amount, description) VALUES (?, ?, ?, ?)',
-                  [member_id, type, amount, description],
+                // 更新会员类型关系
+                db.run('INSERT OR REPLACE INTO member_type_relations (member_id, type_id, start_date) VALUES (?, ?, datetime("now"))',
+                  [member_id, member_type_id],
                   function(err) {
                     if (err) {
                       db.run('ROLLBACK');
                       res.status(400).json({ error: err.message });
                       return;
                     }
-                    db.run('COMMIT');
-                    res.json({ id: this.lastID, member_id, type, amount, description });
+                    // 添加交易记录
+                    db.run(
+                      'INSERT INTO transactions (member_id, type, amount, description) VALUES (?, ?, ?, ?)',
+                      [member_id, type, amount, description],
+                      function(err) {
+                        if (err) {
+                          db.run('ROLLBACK');
+                          res.status(400).json({ error: err.message });
+                          return;
+                        }
+                        db.run('COMMIT');
+                        res.json({ id: this.lastID, member_id, type, amount, description });
+                      }
+                    );
                   }
                 );
               }
