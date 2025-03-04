@@ -519,7 +519,7 @@ app.post('/api/transactions', async (req, res) => {
             // 其他类型会员充值逻辑
             const durationDays = req.body.duration_days || memberType.duration_days;
             db.run('UPDATE members SET points = points + ? WHERE id = ?',
-              [Math.floor(amount * 10), member_id],
+              [Math.floor(amount * 1), member_id],
               function(err) {
                 if (err) {
                   db.run('ROLLBACK');
